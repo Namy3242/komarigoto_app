@@ -39,6 +39,9 @@ dependencies:
   build_runner: ^2.4.15
   implicitly_animated_reorderable_list: ^0.4.2
   animated_list_plus: ^0.5.2
+  hooks_riverpod: ^2.6.1
+  flutter_hooks: ^0.21.2
+  flutter_riverpod: ^2.6.1
 
 dev_dependencies:
   flutter_test:

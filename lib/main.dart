@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'firebase_options.dart';
 import 'presentation/ingredient_inventory_screen.dart';
@@ -9,7 +10,9 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+  runApp(
+    ProviderScope(child: MyApp()), // RiverpodのProviderScopeでラップ
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -85,12 +88,6 @@ class _MyHomePageState extends State<MyHomePage> {
     ],
   };
 
-  void _toggleIngredient(Ingredient ingredient) {
-    setState(() {
-      ingredient.isAvailable = !ingredient.isAvailable;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -100,7 +97,6 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: IngredientInventoryScreen(
         categorizedIngredients: _categorizedIngredients,
-        onToggle: _toggleIngredient,
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {},

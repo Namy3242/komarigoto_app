@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:animated_list_plus/animated_list_plus.dart';
-import 'package:animated_list_plus/transitions.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 
 class Ingredient {
   final String name;
@@ -28,71 +28,80 @@ Color getCategoryColor(BuildContext context, String category) {
   }
 }
 
-class IngredientInventoryScreen extends StatefulWidget {
+// 食材在庫リストの状態管理用Provider
+final ingredientInventoryProvider = StateNotifierProvider<IngredientInventoryNotifier, Map<String, List<Ingredient>>>(
+  (ref) => IngredientInventoryNotifier({}),
+);
+
+class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Ingredient>>> {
+  IngredientInventoryNotifier(Map<String, List<Ingredient>> initial) : super(initial);
+
+  void setInitial(Map<String, List<Ingredient>> data) {
+    if (state.isEmpty) {
+      state = data;
+    }
+  }
+
+  void toggleIngredient(String category, Ingredient ingredient) {
+    final newMap = {...state};
+    final list = List<Ingredient>.from(newMap[category] ?? []);
+    final idx = list.indexWhere((e) => e.name == ingredient.name);
+    if (idx != -1) {
+      list[idx] = Ingredient(
+        name: ingredient.name,
+        icon: ingredient.icon,
+        category: ingredient.category,
+        isAvailable: !ingredient.isAvailable,
+      );
+      newMap[category] = List<Ingredient>.from(list);
+      state = newMap;
+    }
+  }
+}
+
+class IngredientInventoryScreen extends HookConsumerWidget {
   final Map<String, List<Ingredient>> categorizedIngredients;
-  final void Function(Ingredient) onToggle;
 
   const IngredientInventoryScreen({
     required this.categorizedIngredients,
-    required this.onToggle,
     super.key,
   });
 
   @override
-  State<IngredientInventoryScreen> createState() => _IngredientInventoryScreenState();
-}
-
-class _IngredientInventoryScreenState extends State<IngredientInventoryScreen> {
-  late Map<String, List<Ingredient>> _ingredientsMap;
-
-  @override
-  void initState() {
-    super.initState();
-    // Deep copy
-    _ingredientsMap = widget.categorizedIngredients.map((k, v) => MapEntry(k, v.map((e) => Ingredient(
-      name: e.name,
-      icon: e.icon,
-      category: e.category,
-      isAvailable: e.isAvailable,
-    )).toList()));
-  }
-
-  void _handleToggle(Ingredient ingredient, String category) {
-    setState(() {
-      ingredient.isAvailable = !ingredient.isAvailable;
-    });
-    // ソート処理は削除
-    widget.onToggle(ingredient);
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 初回のみProviderに初期値をセット（stateが空のときのみ）
+    useEffect(() {
+      if (ref.read(ingredientInventoryProvider).isEmpty && categorizedIngredients.isNotEmpty) {
+        Future.microtask(() {
+          ref.read(ingredientInventoryProvider.notifier).setInitial(categorizedIngredients);
+        });
+      }
+      return null;
+    }, []); // 依存配列を空にして初回のみ実行
+    final ingredientsMap = ref.watch(ingredientInventoryProvider);
     return ListView(
-      children: _ingredientsMap.entries.map((entry) =>
+      children: ingredientsMap.entries.map((entry) =>
         IngredientCategorySection(
           category: entry.key,
           ingredients: entry.value,
-          onToggle: (ingredient) => _handleToggle(ingredient, entry.key),
         )
       ).toList(),
     );
   }
 }
 
-class IngredientCategorySection extends StatelessWidget {
+class IngredientCategorySection extends ConsumerWidget {
   final String category;
   final List<Ingredient> ingredients;
-  final void Function(Ingredient) onToggle;
 
   const IngredientCategorySection({
     required this.category,
     required this.ingredients,
-    required this.onToggle,
     super.key,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final color = getCategoryColor(context, category);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -103,7 +112,7 @@ class IngredientCategorySection extends StatelessWidget {
         ),
         Container(
           color: color.withOpacity(0.4),
-          height: 164, // カード高さ+余白に合わせて調整
+          height: 164,
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: AnimatedSwitcher(
@@ -128,7 +137,7 @@ class IngredientCategorySection extends StatelessWidget {
                     name: ingredient.name,
                     icon: ingredient.icon,
                     isAvailable: ingredient.isAvailable,
-                    onFlip: () => onToggle(ingredient),
+                    onFlip: () => ref.read(ingredientInventoryProvider.notifier).toggleIngredient(category, ingredient),
                     color: color,
                   ),
                 )).toList(),
@@ -295,3 +304,5 @@ class IngredientCard extends StatelessWidget {
     );
   }
 }
+
+// main.dartのMyApp直下にProviderScopeを追加してください
