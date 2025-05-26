@@ -103,54 +103,199 @@ class IngredientCategorySection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final color = getCategoryColor(context, category);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          child: Text(category, style: Theme.of(context).textTheme.titleLarge),
-        ),
-        Container(
-          color: color.withOpacity(0.4),
-          height: 164,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              switchInCurve: Curves.easeInOut,
-              switchOutCurve: Curves.easeInOut,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.1, 0),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: child,
-                ),
-              ),
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      color: color.withOpacity(0.85),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
               child: Row(
-                key: ValueKey(ingredients.map((e) => e.isAvailable).join()),
-                children: ingredients.map((ingredient) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  child: IngredientCard(
-                    name: ingredient.name,
-                    icon: ingredient.icon,
-                    isAvailable: ingredient.isAvailable,
-                    onFlip: () => ref.read(ingredientInventoryProvider.notifier).toggleIngredient(category, ingredient),
-                    color: color,
+                children: [
+                  Icon(Icons.label, color: color.darken(0.25), size: 26),
+                  const SizedBox(width: 10),
+                  Text(
+                    category,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: color.darken(0.35),
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
                   ),
-                )).toList(),
+                ],
               ),
             ),
-          ),
+            Container(
+              color: Colors.transparent,
+              height: 164,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    // 追加カード
+                    _AddIngredientCard(
+                      color: color,
+                      onTap: () => _showAddIngredientSheet(context, ref, category),
+                    ),
+                    // 既存の食材カード
+                    ...ingredients.map((ingredient) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      child: IngredientCard(
+                        name: ingredient.name,
+                        icon: ingredient.icon,
+                        isAvailable: ingredient.isAvailable,
+                        onFlip: () => ref.read(ingredientInventoryProvider.notifier).toggleIngredient(category, ingredient),
+                        color: color,
+                      ),
+                    )),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
         ),
-        const Divider(),
-      ],
+      ),
     );
   }
 }
 
+// --- 食材追加カード ---
+class _AddIngredientCard extends StatelessWidget {
+  final Color color;
+  final VoidCallback onTap;
+  const _AddIngredientCard({required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 110,
+        height: 110, // 高さを140→110に調整
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.18),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.darken(0.18), width: 1.0),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min, // これを追加
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add_circle_outline, color: color.darken(0.18), size: 38),
+              const SizedBox(height: 8),
+              Text('追加', style: TextStyle(color: color.darken(0.28), fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// --- 食材追加用ボトムシート ---
+void _showAddIngredientSheet(BuildContext context, WidgetRef ref, String category) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+    ),
+    builder: (context) {
+      return _AddIngredientSheet(category: category);
+    },
+  );
+}
+
+class _AddIngredientSheet extends HookWidget {
+  final String category;
+  const _AddIngredientSheet({required this.category});
+
+  @override
+  Widget build(BuildContext context) {
+    final searchController = useTextEditingController();
+    final searchText = useState('');
+    // 仮の候補リスト（本来はDBや定数から）
+    final allCandidates = [
+      Ingredient(name: 'トマト', icon: Icons.local_pizza, category: '野菜', isAvailable: true),
+      Ingredient(name: 'きゅうり', icon: Icons.eco, category: '野菜', isAvailable: true),
+      Ingredient(name: 'にんじん', icon: Icons.emoji_nature, category: '野菜', isAvailable: true),
+      Ingredient(name: '鶏肉', icon: Icons.set_meal, category: '肉', isAvailable: true),
+      Ingredient(name: '豚肉', icon: Icons.lunch_dining, category: '肉', isAvailable: true),
+      Ingredient(name: 'サーモン', icon: Icons.set_meal, category: '魚', isAvailable: true),
+      Ingredient(name: '塩', icon: Icons.spa, category: '調味料', isAvailable: true),
+      Ingredient(name: 'しょうゆ', icon: Icons.spa, category: '調味料', isAvailable: true),
+      Ingredient(name: '卵', icon: Icons.egg, category: 'その他', isAvailable: true),
+    ];
+    final filtered = allCandidates.where((i) =>
+      i.category == category &&
+      (searchText.value.isEmpty || i.name.contains(searchText.value))
+    ).toList();
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16, right: 16,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.6, // 高さを画面の60%に指定
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: searchController,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: '食材名で検索',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => searchText.value = v,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              height: 140,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: filtered.map((ingredient) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: IngredientCard(
+                    name: ingredient.name,
+                    icon: ingredient.icon,
+                    isAvailable: true,
+                    onFlip: () {}, // 追加処理は後で
+                    color: getCategoryColor(context, category),
+                  ),
+                )).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- 食材カード（グローバルスコープに移動） ---
 class IngredientCard extends StatelessWidget {
   final String name;
   final IconData icon;
@@ -176,22 +321,21 @@ class IngredientCard extends StatelessWidget {
         duration: const Duration(milliseconds: 350),
         curve: Curves.easeInOut,
         width: 110,
-        height: 140,
+        height: 140, // 高さを140→110に統一
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
         decoration: BoxDecoration(
-          color: isAvailable ? color : theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
+          color: isAvailable ? color : Colors.white,
+          borderRadius: BorderRadius.circular(10),
           boxShadow: [
             BoxShadow(
-              color: isAvailable ? color.withOpacity(0.25) : Colors.black12,
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              color: isAvailable ? Colors.black12 : Colors.black12,
+              blurRadius: isAvailable ? 4 : 16,
+              offset: isAvailable ? const Offset(0, 1) : const Offset(0, -8),
             ),
           ],
-          border: Border.all(
-            color: isAvailable ? theme.colorScheme.primary.withOpacity(0.25) : Colors.grey[300]!,
-            width: 1.5,
-          ),
+          border: isAvailable
+              ? Border.all(color: color.darken(0.18), width: 2.0) // 有るときだけ太めの輪郭線
+              : Border.all(color: Colors.transparent, width: 0),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -199,22 +343,22 @@ class IngredientCard extends StatelessWidget {
             // 上部: アイコン
             Container(
               decoration: BoxDecoration(
-                color: isAvailable ? Colors.white : Colors.grey[200],
+                color: isAvailable ? Colors.white : Colors.white,
                 shape: BoxShape.circle,
                 boxShadow: [
                   if (isAvailable)
                     BoxShadow(
-                      color: color.withOpacity(0.18),
-                      blurRadius: 8,
+                      color: color.withOpacity(0.13),
+                      blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
                 ],
               ),
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               child: Icon(
                 icon,
-                size: 38,
-                color: isAvailable ? theme.colorScheme.primary : Colors.grey,
+                size: 40,
+                color: isAvailable ? color.darken(0.18) : Colors.grey,
               ),
             ),
             // 中央: Divider
@@ -232,22 +376,22 @@ class IngredientCard extends StatelessWidget {
             Container(
               width: double.infinity,
               decoration: BoxDecoration(
-                color: isAvailable ? color.withOpacity(0.13) : Colors.grey[100],
+                color: Colors.white, // ←背景色を常に白に
                 borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
+                  bottomLeft: Radius.circular(10),
+                  bottomRight: Radius.circular(10),
                 ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     name,
-                    style: theme.textTheme.bodyMedium?.copyWith(
+                    style: theme.textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: isAvailable ? theme.colorScheme.onSecondaryContainer : Colors.grey[600],
-                      letterSpacing: 0.5,
+                      color: isAvailable ? color.darken(0.28) : Colors.grey[600],
+                      letterSpacing: 0.7,
                     ),
                     textAlign: TextAlign.center,
                     maxLines: 1,
@@ -302,6 +446,16 @@ class IngredientCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// --- ユーティリティ: カラーを暗くする拡張 ---
+extension ColorUtils on Color {
+  Color darken([double amount = .1]) {
+    assert(amount >= 0 && amount <= 1);
+    final hsl = HSLColor.fromColor(this);
+    final hslDark = hsl.withLightness((hsl.lightness - amount).clamp(0.0, 1.0));
+    return hslDark.toColor();
   }
 }
 
