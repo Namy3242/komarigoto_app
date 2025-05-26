@@ -41,7 +41,7 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MainBottomNav(),
     );
   }
 }
@@ -65,29 +65,6 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  // ダミー食材データ
-  final Map<String, List<Ingredient>> _categorizedIngredients = {
-    '野菜': [
-      Ingredient(name: 'トマト', icon: Icons.local_pizza, category: '野菜', isAvailable: true),
-      Ingredient(name: 'きゅうり', icon: Icons.eco, category: '野菜', isAvailable: false),
-      Ingredient(name: 'にんじん', icon: Icons.emoji_nature, category: '野菜', isAvailable: true),
-    ],
-    '肉': [
-      Ingredient(name: '鶏肉', icon: Icons.set_meal, category: '肉', isAvailable: true),
-      Ingredient(name: '豚肉', icon: Icons.lunch_dining, category: '肉', isAvailable: false),
-    ],
-    '魚': [
-      Ingredient(name: 'サーモン', icon: Icons.set_meal, category: '魚', isAvailable: false),
-    ],
-    '調味料': [
-      Ingredient(name: '塩', icon: Icons.spa, category: '調味料', isAvailable: true),
-      Ingredient(name: 'しょうゆ', icon: Icons.spa, category: '調味料', isAvailable: true),
-    ],
-    'その他': [
-      Ingredient(name: '卵', icon: Icons.egg, category: 'その他', isAvailable: true),
-    ],
-  };
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -95,9 +72,7 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
       ),
-      body: IngredientInventoryScreen(
-        categorizedIngredients: _categorizedIngredients,
-      ),
+      body: const IngredientInventoryScreen(), // categorizedIngredients渡しを廃止
       floatingActionButton: FloatingActionButton(
         onPressed: () {},
         tooltip: '今ある食材で作れるレシピ',
