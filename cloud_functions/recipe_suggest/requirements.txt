@@ -1,0 +1,3 @@
+# requirements.txt for Cloud Functions (Python)
+functions-framework
+requests
