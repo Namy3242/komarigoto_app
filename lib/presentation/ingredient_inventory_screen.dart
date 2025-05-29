@@ -6,6 +6,8 @@ import 'package:komarigoto_app/data/repositories_impl/firestore_inventory_reposi
 import 'package:komarigoto_app/domain/usecases/fetch_user_inventory_use_case.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'ingredient_master_add_screen.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class Ingredient {
   final String id; // 追加: マスタID（Firestoreのdoc.id）
@@ -109,6 +111,74 @@ class IngredientInventoryScreen extends HookConsumerWidget {
   // Firestore連携型に変更: 引数なし
   const IngredientInventoryScreen({super.key});
 
+  Future<void> _suggestRecipe(BuildContext context, Map<String, List<Ingredient>> ingredientsMap) async {
+    // 在庫ありの食材名リストを抽出
+    final available = ingredientsMap.values.expand((list) => list).where((i) => i.isAvailable).map((i) => i.name).toList();
+    if (available.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (context) => const AlertDialog(
+          title: Text('レシピ提案'),
+          content: Text('在庫がある食材がありません。'),
+        ),
+      );
+      return;
+    }
+    // Cloud Functionsのエンドポイント
+    const endpoint = 'https://YOUR_CLOUD_FUNCTION_URL/recipe_suggest';
+    try {
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'ingredients': available}),
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final recipes = data['recipes'] as List<dynamic>?;
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('レシピ提案'),
+            content: recipes == null || recipes.isEmpty
+                ? const Text('レシピが見つかりませんでした。')
+                : SizedBox(
+                    width: 320,
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: recipes.map((r) => ListTile(
+                        title: Text(r['title'] ?? ''),
+                        subtitle: Text(r['description'] ?? ''),
+                      )).toList(),
+                    ),
+                  ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('閉じる'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        showDialog(
+          context: context,
+          builder: (context) => const AlertDialog(
+            title: Text('エラー'),
+            content: Text('レシピ提案APIの呼び出しに失敗しました。'),
+          ),
+        );
+      }
+    } catch (e) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('エラー'),
+          content: Text('通信エラー: $e'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 初回のみProviderでFirestoreから在庫取得
@@ -117,17 +187,23 @@ class IngredientInventoryScreen extends HookConsumerWidget {
       return null;
     }, []);
     final ingredientsMap = ref.watch(ingredientInventoryProvider);
-    // 早期リターンを削除し、常に全カテゴリを表示
-    return ListView(
-      children: [
-        for (final category in [
-          '主食', '肉・魚・卵・豆', '野菜', 'きのこ', '調味料', 'その他'
-        ])
-          IngredientCategorySection(
-            category: category,
-            ingredients: ingredientsMap[category] ?? [],
-          ),
-      ],
+    return Scaffold(
+      body: ListView(
+        children: [
+          for (final category in [
+            '主食', '肉・魚・卵・豆', '野菜', 'きのこ', '調味料', 'その他'
+          ])
+            IngredientCategorySection(
+              category: category,
+              ingredients: ingredientsMap[category] ?? [],
+            ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _suggestRecipe(context, ingredientsMap),
+        tooltip: '今ある食材で作れるレシピ',
+        child: const Icon(Icons.restaurant_menu),
+      ),
     );
   }
 }
