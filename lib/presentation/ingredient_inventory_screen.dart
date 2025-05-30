@@ -48,6 +48,10 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Ingredi
 
   final String userId = 'test_user'; // TODO: 本来は認証連携
 
+  // --- レシピ提案・保存用状態 ---
+  bool isLoading = false;
+  String? errorMessage;
+
   // Firestoreから在庫データを取得し、カテゴリごとにマッピングしてstateにセット
   Future<void> fetchInventory() async {
     final firestore = FirebaseFirestore.instance;
@@ -106,42 +110,20 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Ingredi
       state = newMap;
     }
   }
-}
 
-// --- 在庫管理画面（StatefulWidget化） ---
-class IngredientInventoryScreen extends ConsumerStatefulWidget {
-  const IngredientInventoryScreen({super.key});
-
-  @override
-  ConsumerState<IngredientInventoryScreen> createState() => _IngredientInventoryScreenState();
-}
-
-class _IngredientInventoryScreenState extends ConsumerState<IngredientInventoryScreen> {
-  bool isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // useEffectの代わりにinitStateでfetchInventoryを呼ぶ
-    Future.microtask(() {
-      ref.read(ingredientInventoryProvider.notifier).fetchInventory();
-    });
-  }
-
-  Future<void> _suggestRecipe() async {
-    final ingredientsMap = ref.read(ingredientInventoryProvider);
+  // --- レシピ提案・保存 ---
+  Future<void> suggestAndSaveRecipes(BuildContext context) async {
+    final ingredientsMap = state;
     final available = ingredientsMap.values.expand((list) => list).where((i) => i.isAvailable).map((i) => i.name).toList();
     if (available.isEmpty) {
-      showDialog(
-        context: context,
-        builder: (context) => const AlertDialog(
-          title: Text('レシピ提案'),
-          content: Text('在庫がある食材がありません。'),
-        ),
-      );
+      errorMessage = '在庫がある食材がありません。';
+      state = Map.from(state); // 通知
       return;
     }
-    setState(() => isLoading = true);
+    isLoading = true;
+    errorMessage = null;
+    state = Map.from(state); // 通知
+
     const endpoint = 'https://asia-northeast1-suggestrecipe.cloudfunctions.net/recipe_suggest';
     final apiKey = dotenv.env['GEMINI_API_KEY'];
     try {
@@ -157,18 +139,12 @@ class _IngredientInventoryScreenState extends ConsumerState<IngredientInventoryS
         final data = jsonDecode(res.body);
         final recipes = data['recipes'] as List<dynamic>?;
         if (recipes == null || recipes.isEmpty) {
-          setState(() => isLoading = false);
-          showDialog(
-            context: context,
-            builder: (context) => const AlertDialog(
-              title: Text('レシピ提案'),
-              content: Text('レシピが見つかりませんでした。'),
-            ),
-          );
+          isLoading = false;
+          errorMessage = 'レシピが見つかりませんでした。';
+          state = Map.from(state);
           return;
         }
         // Firestoreに全レシピ自動保存
-        final userId = 'test_user'; // TODO: 認証連携
         final batch = FirebaseFirestore.instance.batch();
         final recipesCol = FirebaseFirestore.instance.collection('users/$userId/recipes');
         for (final recipe in recipes) {
@@ -181,39 +157,58 @@ class _IngredientInventoryScreenState extends ConsumerState<IngredientInventoryS
           });
         }
         await batch.commit();
-        setState(() => isLoading = false);
-        showDialog(
-          context: context,
-          builder: (context) => const AlertDialog(
-            title: Text('保存完了'),
-            content: Text('提案されたレシピをすべて保存しました。'),
-          ),
-        );
+        isLoading = false;
+        errorMessage = null;
+        state = Map.from(state);
+        // 成功時はダイアログ表示
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => const AlertDialog(
+              title: Text('保存完了'),
+              content: Text('提案されたレシピをすべて保存しました。'),
+            ),
+          );
+        }
       } else {
-        setState(() => isLoading = false);
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('エラー'),
-            content: Text('レシピ提案APIの呼び出しに失敗しました。\n${res.body}'),
-          ),
-        );
+        isLoading = false;
+        errorMessage = 'レシピ提案APIの呼び出しに失敗しました。\n${res.body}';
+        state = Map.from(state);
       }
     } catch (e) {
-      setState(() => isLoading = false);
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('エラー'),
-          content: Text('通信エラー: $e'),
-        ),
-      );
+      isLoading = false;
+      errorMessage = '通信エラー: $e';
+      state = Map.from(state);
     }
   }
+}
 
+// --- 在庫管理画面（StatefulWidget化） ---
+class IngredientInventoryScreen extends ConsumerStatefulWidget {
+  const IngredientInventoryScreen({super.key});
+
+  @override
+  ConsumerState<IngredientInventoryScreen> createState() => _IngredientInventoryScreenState();
+}
+
+class _IngredientInventoryScreenState extends ConsumerState<IngredientInventoryScreen> {
   @override
   Widget build(BuildContext context) {
     final ingredientsMap = ref.watch(ingredientInventoryProvider);
+    final notifier = ref.read(ingredientInventoryProvider.notifier);
+    final isLoading = notifier.isLoading;
+    final errorMessage = notifier.errorMessage;
+
+    // エラー時はSnackBar表示
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (errorMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+        notifier.errorMessage = null; // 一度表示したらクリア
+      }
+    });
+
     return Scaffold(
       body: ListView(
         children: [
@@ -227,7 +222,7 @@ class _IngredientInventoryScreenState extends ConsumerState<IngredientInventoryS
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: isLoading ? null : _suggestRecipe,
+        onPressed: isLoading ? null : () => notifier.suggestAndSaveRecipes(context),
         tooltip: '今ある食材で作れるレシピ',
         child: isLoading
             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
