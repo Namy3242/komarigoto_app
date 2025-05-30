@@ -26,42 +26,66 @@ samples, guidance on mobile development, and a full API reference.
 
 ## アーキテクチャ
 
-このプロジェクトは、クリーンアーキテクチャを採用しています。以下は各層の役割を示した図です：
+このプロジェクトは、クリーンアーキテクチャおよびMVVMパターンを採用しています。
+
+### 構成図（マーメイド記法）
 
 ```mermaid
 graph TD
-    A[Presentation層] -->|ViewModelを通じて| B[Domain層]
-    B -->|リポジトリインターフェース| C[Data層]
-    C -->|データソース| D[Firestore/AI/カメラ]
+  %% "Presentation層"
+  subgraph "Presentation層"
+    A1["View (Widget)"]
+    A2["ViewModel (StateNotifier/Provider)"]
+    A1 -- "UIイベント/状態監視" --> A2
+  end
 
-    subgraph Presentation層
-        A1["View (Widget)"]
-        A2["ViewModel"]
-        A1 --> A2
-    end
+  %% "Domain層"
+  subgraph "Domain層"
+    B1["Entity"]
+    B2["UseCase"]
+    B3["Repositoryインターフェース"]
+    B1 -- "ドメインデータ" --> B2
+    B2 -- "ビジネスロジック" --> B3
+  end
 
-    subgraph Domain層
-        B1["Entity"]
-        B2["UseCase"]
-        B3["Repositoryインターフェース"]
-        B1 --> B2
-        B2 --> B3
-    end
+  %% "Data層"
+  subgraph "Data層"
+    C1["Repository実装"]
+    C2["DataSource(Firestore/API)"]
+    C1 -- "データ取得/保存" --> C2
+  end
 
-    subgraph Data層
-        C1["Repository実装"]
-        C2["DataSource"]
-        C1 --> C2
-    end
+  %% "外部システム"
+  subgraph "外部システム"
+    D1["Firestore"]
+    D2["Google Cloud Functions"]
+    D3["Gemini API"]
+    D4["カメラAPI"]
+  end
 
-    subgraph 外部システム
-        D1["Firestore"]
-        D2["AI"]
-        D3["カメラAPI"]
-        D1 --> D2
-        D2 --> D3
-    end
+  %% "依存関係"
+  A2 -- "UseCase呼び出し/Entity受取" --> B2
+  B3 -- "実装依存" --> C1
+  C2 -- "REST/SDK通信" --> D1
+  C2 -- "REST通信" --> D2
+  D2 -- "AIリクエスト/レスポンス" --> D3
+
+  %% "データの流れ"
+  A1 -- "ユーザー操作/表示データ" --> A2
+  A2 -- "状態データ/イベント" --> A1
+  A2 -- "ドメインデータ/ユースケース" --> B2
+  B2 -- "エンティティ/DTO" --> A2
+  C1 -- "ドメインモデル/DTO" --> B3
+  C2 -- "JSON/Mapデータ" --> C1
+  D1 -- "ドキュメントデータ" --> C2
+  D3 -- "レシピ案JSON" --> D2
 ```
+
+### 各モジュールの依存関係・データやり取り
+- Presentation層（View, ViewModel）はDomain層のUseCase/Entityに依存し、状態やイベントをやり取りします。
+- Domain層はRepositoryインターフェースを通じてData層に依存します。
+- Data層は外部システム（Firestore, Cloud Functions, Gemini API等）とデータのやり取りを行います。
+- データのやり取りは、エンティティ/DTO/Map/JSONなどで行われます。
 
 ## ディレクトリ構成
 
