@@ -169,7 +169,7 @@ def decode_firestore_event_data(data):
 
 
 @functions_framework.cloud_event
-def ingredient_master_on_create(cloud_event: CloudEvent):
+def on_create_ingredient_master(cloud_event: CloudEvent):
     # print(f"Received event with ID: {cloud_event['id']} and data {cloud_event.data}") # print を print に変更
     logging.info(f"Received event with ID: {cloud_event['id']}")
     # Log raw event data for deep debugging, adjust level if too verbose for production
@@ -268,3 +268,11 @@ def ingredient_master_on_create(cloud_event: CloudEvent):
             except Exception as inner_e:
                 # This catches errors during the attempt to update with error status
                 logging.error(f"Failed to update document {doc_id} with error status: {inner_e}", exc_info=True)
+        else: # doc_id が "unknown_doc_id_at_start" のままの場合
+            logging.error(f"doc_id was '{doc_id}' (not properly extracted), cannot mark error on document. Original error: {e}")
+        
+        # Regardless of what happened during the error logging attempt (success, doc not found, or new error),
+        # we are in the main exception handler for the original error 'e'.
+        # Return here to signify that the function has handled the exception (by logging it) 
+        # and should not be retried by Cloud Functions.
+        return
