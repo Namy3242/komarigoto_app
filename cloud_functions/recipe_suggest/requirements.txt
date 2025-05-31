@@ -1,4 +1,7 @@
 # requirements.txt for Cloud Functions (Python)
 functions-framework
+google-cloud-firestore
 requests
 flask_cors
+google-cloud-storage
+google-cloud-aiplatform

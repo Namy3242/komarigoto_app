@@ -13,7 +13,6 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
   final _formKey = GlobalKey<FormState>();
   String _name = '';
   String _category = '主食';
-  String _imageUrl = '';
 
   final List<String> _categories = [
     '主食', '肉・魚・卵・豆', '野菜', 'きのこ', '調味料', 'その他'
@@ -29,7 +28,10 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
     await FirebaseFirestore.instance.collection('ingredients_master').add({
       'name': _name,
       'category': _category,
-      'imageUrl': _imageUrl,
+      // Cloud Functionsで自動生成するためimageUrl/kana/synonymsは空値で初期化
+      'imageUrl': '',
+      'kana': '',
+      'synonyms': <String>[],
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('食材を登録しました')));
@@ -69,20 +71,6 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
                     onChanged: (v) => setState(() => _category = v ?? '主食'),
                     decoration: const InputDecoration(labelText: 'カテゴリ'),
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    decoration: const InputDecoration(labelText: '画像URL（任意）'),
-                    onSaved: (v) => _imageUrl = v?.trim() ?? '',
-                    validator: (v) {
-                      if (v != null && v.isNotEmpty) {
-                        final uri = Uri.tryParse(v);
-                        if (uri == null || !uri.isAbsolute) {
-                          return '有効なURLを入力してください';
-                        }
-                      }
-                      return null;
-                    },
-                  ),
                   const SizedBox(height: 32),
                   Center(
                     child: ElevatedButton(
@@ -113,12 +101,42 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, i) {
                       final data = docs[i].data();
-                      return ListTile(
-                        leading: data['imageUrl'] != null && data['imageUrl'].toString().isNotEmpty
-                            ? Image.network(data['imageUrl'], width: 36, height: 36, errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported))
-                            : const Icon(Icons.fastfood),
-                        title: Text(data['name'] ?? ''),
-                        subtitle: Text(data['category'] ?? ''),
+                      final docId = docs[i].id;
+                      return Dismissible(
+                        key: ValueKey(docId),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        confirmDismiss: (direction) async {
+                          return await showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('削除確認'),
+                              content: Text('「${data['name']}」をマスタから削除しますか？'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')),
+                                TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('削除', style: TextStyle(color: Colors.red))),
+                              ],
+                            ),
+                          );
+                        },
+                        onDismissed: (_) async {
+                          await FirebaseFirestore.instance.collection('ingredients_master').doc(docId).delete();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('${data['name']} をマスタから削除しました')),
+                          );
+                        },
+                        child: ListTile(
+                          leading: data['imageUrl'] != null && data['imageUrl'].toString().isNotEmpty
+                              ? Image.network(data['imageUrl'], width: 36, height: 36, errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported))
+                              : const Icon(Icons.fastfood),
+                          title: Text(data['name'] ?? ''),
+                          subtitle: Text(data['category'] ?? ''),
+                        ),
                       );
                     },
                   );

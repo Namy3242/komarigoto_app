@@ -43,6 +43,8 @@ dependencies:
   flutter_hooks: ^0.21.2
   flutter_riverpod: ^2.6.1
   flutter_dotenv: ^5.0.2
+  firebase_auth: ^5.5.4
+  google_sign_in: ^6.3.0
 
 dev_dependencies:
   flutter_test:

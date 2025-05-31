@@ -22,6 +22,8 @@ class FirestoreIngredientRepository implements IngredientRepository {
           name: data['name'] as String? ?? 'Unknown',
           imageUrl: data['imageUrl'] as String? ?? '',
           category: data['category'] as String? ?? '',
+          kana: data['kana'] as String? ?? '',
+          synonyms: (data['synonyms'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
         );
       }).toList();
     } catch (e, stackTrace) {
@@ -41,6 +43,8 @@ class FirestoreIngredientRepository implements IngredientRepository {
         name: data['name'] as String? ?? 'Unknown',
         imageUrl: data['imageUrl'] as String? ?? '',
         category: data['category'] as String? ?? '',
+        kana: data['kana'] as String? ?? '',
+        synonyms: (data['synonyms'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
       );
     } catch (e, stackTrace) {
       log('Error fetching ingredient by ID: $e', stackTrace: stackTrace);
@@ -58,6 +62,8 @@ class FirestoreIngredientRepository implements IngredientRepository {
         'name': ingredient.name,
         'imageUrl': ingredient.imageUrl,
         'category': ingredient.category,
+        'kana': ingredient.kana,
+        'synonyms': ingredient.synonyms,
       });
     } catch (e, stackTrace) {
       log('Error adding ingredient: $e', stackTrace: stackTrace);
@@ -88,6 +94,8 @@ class FirestoreIngredientRepository implements IngredientRepository {
         'name': ingredient.name,
         'imageUrl': ingredient.imageUrl,
         'category': ingredient.category,
+        'kana': ingredient.kana,
+        'synonyms': ingredient.synonyms,
       });
     } catch (e, stackTrace) {
       log('Error updating ingredient: $e', stackTrace: stackTrace);
