@@ -67,5 +67,5 @@ def recipe_suggest(request):
         return resp, 500
 
 # --- ここからon_create_ingredient_masterのエントリポイントを追加 ---
-from on_create_ingredient_master import on_create_ingredient_master
+from ingredient_master_on_create import on_create_ingredient_master
 # --- ここまで追加 ---
