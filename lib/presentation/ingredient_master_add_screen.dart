@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -25,6 +26,7 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
   Future<void> _addIngredient() async {
     if (!_formKey.currentState!.validate()) return;
     _formKey.currentState!.save();
+    log('[addIngredient] Firestoreに食材追加: name=$_name, category=$_category');
     await FirebaseFirestore.instance.collection('ingredients_master').add({
       'name': _name,
       'category': _category,
@@ -32,6 +34,10 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
       'imageUrl': '',
       'kana': '',
       'synonyms': <String>[],
+    }).then((docRef) {
+      log('[addIngredient] Firestore追加完了: docId=[32m[1m[4m[0m[39m[22m[24m${docRef.id}');
+    }).catchError((e) {
+      log('[addIngredient] Firestore追加エラー: $e', level: 1000);
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('食材を登録しました')));

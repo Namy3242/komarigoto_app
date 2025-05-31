@@ -1,7 +1,10 @@
 # requirements.txt for Cloud Functions (Python)
-functions-framework
-google-cloud-firestore
-requests
-flask_cors
-google-cloud-storage
-google-cloud-aiplatform
+functions-framework>=3.0.0
+google-cloud-firestore>=2.11.0
+google-cloud-storage>=2.12.0
+google-cloud-aiplatform>=1.38.0
+requests>=2.31.0
+flask-cors>=4.0.0
+protobuf==5.27.2
+grpcio-tools==1.64.1
+cloudevents

@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../domain/entities/ingredient.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:developer' as developer; // developer.log を使用するためにインポート
 
 // presentation層用の拡張Ingredientクラス
 class PresentationIngredient extends Ingredient {
@@ -63,44 +64,79 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
 
   // Firestoreから在庫データを取得し、カテゴリごとにマッピングしてstateにセット
   Future<void> fetchInventory() async {
+    developer.log('fetchInventory started for userId: $userId', name: 'IngredientInventoryNotifier');
+    if (userId.isEmpty) {
+      developer.log('User ID is empty, skipping fetch.', name: 'IngredientInventoryNotifier');
+      state = {}; // ユーザーIDがない場合は空の状態にする
+      return;
+    }
+
     final firestore = FirebaseFirestore.instance;
     final wrapper = FirestoreWrapper(firestore);
     final repo = FirestoreInventoryRepository(wrapper);
     final useCase = FetchUserInventoryUseCaseImpl(repo);
-    final items = await useCase.call(userId);
+    
+    try {
+      final items = await useCase.call(userId);
+      developer.log('Fetched inventory items: ${items.length}', name: 'IngredientInventoryNotifier');
+      if (items.isEmpty) {
+        developer.log('No inventory items found for user.', name: 'IngredientInventoryNotifier');
+        state = {};
+        return;
+      }
 
-    // 1. マスタ食材を全件取得し、ingredientId→マスタ情報Mapを作成
-    final masterSnapshot = await firestore.collection('ingredients_master').get();
-    final masterMap = {
-      for (final doc in masterSnapshot.docs)
-        doc.id: {
-          'name': doc['name'] ?? '',
-          'category': doc['category'] ?? 'その他',
-          'imageUrl': doc['imageUrl'] ?? '',
-          'kana': doc['kana'] ?? '',
-          'synonyms': (doc['synonyms'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
+      // 1. マスタ食材を全件取得し、ingredientId→マスタ情報Mapを作成
+      final masterSnapshot = await firestore.collection('ingredients_master').get();
+      developer.log('Fetched master ingredients: ${masterSnapshot.docs.length}', name: 'IngredientInventoryNotifier');
+      if (masterSnapshot.docs.isEmpty) {
+        developer.log('No master ingredients found.', name: 'IngredientInventoryNotifier');
+        state = {};
+        return;
+      }
+
+      final masterMap = {
+        for (final doc in masterSnapshot.docs)
+          doc.id: {
+            'name': doc['name'] ?? '',
+            'category': doc['category'] ?? 'その他',
+            'imageUrl': doc['imageUrl'] ?? '',
+            'kana': doc['kana'] ?? '',
+            'synonyms': (doc['synonyms'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
+          }
+      };
+      developer.log('Created masterMap with ${masterMap.length} entries.', name: 'IngredientInventoryNotifier');
+
+      // 2. inventoryをingredientIdでマスタ参照し、カテゴリ分け
+      final Map<String, List<PresentationIngredient>> categorized = {};
+      for (final item in items) {
+        developer.log('Processing inventory item: ${item.ingredientId}, status: ${item.status}', name: 'IngredientInventoryNotifier');
+        final master = masterMap[item.ingredientId];
+        if (master == null) {
+          developer.log('Master data not found for ingredientId: ${item.ingredientId}. Skipping.', name: 'IngredientInventoryNotifier');
+          continue; // マスタに存在しない場合はスキップ
         }
-    };
+        developer.log('Found master data for ${item.ingredientId}: ${master['name']}', name: 'IngredientInventoryNotifier');
 
-    // 2. inventoryをingredientIdでマスタ参照し、カテゴリ分け
-    final Map<String, List<PresentationIngredient>> categorized = {};
-    for (final item in items) {
-      final master = masterMap[item.ingredientId];
-      if (master == null) continue; // マスタに存在しない場合はスキップ
-      final ingredient = PresentationIngredient(
-        id: item.ingredientId,
-        name: master['name'],
-        imageUrl: master['imageUrl'],
-        category: master['category'],
-        kana: master['kana'],
-        synonyms: List<String>.from(master['synonyms'] ?? []),
-        icon: Icons.fastfood, // TODO: アイコンもマスタ連携
-        isAvailable: item.status == 'in_stock',
-      );
-      // isAvailableやiconはpresentation層でラップして管理する場合は別途拡張
-      (categorized[ingredient.category] ??= []).add(ingredient);
+        final ingredient = PresentationIngredient(
+          id: item.ingredientId,
+          name: master['name'],
+          imageUrl: master['imageUrl'],
+          category: master['category'],
+          kana: master['kana'],
+          synonyms: List<String>.from(master['synonyms'] ?? []),
+          icon: Icons.fastfood, // TODO: アイコンもマスタ連携
+          isAvailable: item.status == 'in_stock',
+        );
+        (categorized[ingredient.category] ??= []).add(ingredient);
+        developer.log('Added ${ingredient.name} to category ${ingredient.category}. Available: ${ingredient.isAvailable}', name: 'IngredientInventoryNotifier');
+      }
+      developer.log('Categorized ingredients: $categorized', name: 'IngredientInventoryNotifier');
+      state = categorized;
+      developer.log('State updated with ${state.length} categories.', name: 'IngredientInventoryNotifier');
+    } catch (e, stackTrace) {
+      developer.log('Error in fetchInventory: $e', stackTrace: stackTrace, name: 'IngredientInventoryNotifier', error: e);
+      state = {}; // エラー発生時は空の状態にする
     }
-    state = categorized;
   }
 
   void setInitial(Map<String, List<Ingredient>> data) {
@@ -131,7 +167,8 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
       final newStatus = !ingredient.isAvailable;
       // Firestoreの在庫状態も更新
       final firestore = FirebaseFirestore.instance;
-      await firestore.collection('users/test_user/inventory').doc(ingredient.id).update({
+      // TODO: userId を使用するように修正
+      await firestore.collection('users/$userId/inventory').doc(ingredient.id).update({
         'status': newStatus ? 'in_stock' : 'outof_stock',
       });
       list[idx] = PresentationIngredient(
@@ -293,6 +330,7 @@ class IngredientCategorySection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final color = getCategoryColor(context, category);
     final theme = Theme.of(context);
+    final notifier = ref.read(ingredientInventoryProvider.notifier); // notifierを取得
     return Card(
       elevation: 4,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -339,13 +377,16 @@ class IngredientCategorySection extends ConsumerWidget {
                         name: ingredient.name,
                         icon: ingredient.icon,
                         isAvailable: ingredient.isAvailable,
-                        onFlip: () => ref.read(ingredientInventoryProvider.notifier).toggleIngredient(category, ingredient),
+                        onFlip: () => notifier.toggleIngredient(category, ingredient), // notifierを使用
                         color: color,
                         imageUrl: ingredient.imageUrl,
                         onDelete: () async {
                           // 在庫から削除
                           final firestore = FirebaseFirestore.instance;
-                          await firestore.collection('users/test_user/inventory').doc(ingredient.id).delete();
+                          // TODO: userId を使用するように修正
+                          await firestore.collection('users/${notifier.userId}/inventory').doc(ingredient.id).delete();
+                          // Providerを更新してUIに反映
+                          await notifier.fetchInventory();
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text('${ingredient.name} を在庫から削除しました')),
@@ -425,6 +466,7 @@ class _AddIngredientSheet extends HookWidget {
     final searchController = useTextEditingController();
     final searchText = useState('');
     final isAvailable = useState(true); // トグル用
+    final notifier = ProviderScope.containerOf(context, listen: false).read(ingredientInventoryProvider.notifier); // notifierを取得
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('ingredients_master')
@@ -446,7 +488,7 @@ class _AddIngredientSheet extends HookWidget {
         }).toList() ?? [];
         return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
           future: FirebaseFirestore.instance
-              .collection('users/test_user/inventory')
+              .collection('users/${notifier.userId}/inventory') // TODO: userId を使用するように修正
               .get(),
           builder: (context, inventorySnapshot) {
             final inventoryIds = inventorySnapshot.hasData
@@ -513,15 +555,16 @@ class _AddIngredientSheet extends HookWidget {
                               onFlip: () async {
                                 // Firestoreに在庫追加（ingredientIdで登録）
                                 final firestore = FirebaseFirestore.instance;
-                                await firestore.collection('users/test_user/inventory').doc(ingredient.id).set({
+                                // TODO: userId を使用するように修正
+                                await firestore.collection('users/${notifier.userId}/inventory').doc(ingredient.id).set({
                                   'ingredientId': ingredient.id,
                                   'status': isAvailable.value ? 'in_stock' : 'outof_stock',
-                                  'quantity': 1,
+                                  'quantity': 1, // 例えばデフォルト数量
+                                  'createdAt': FieldValue.serverTimestamp(), // 追加日時
                                 });
                                 // 在庫管理画面のProviderを更新
                                 if (context.mounted) {
-                                  final container = ProviderScope.containerOf(context, listen: false);
-                                  await container.read(ingredientInventoryProvider.notifier).fetchInventory();
+                                  await notifier.fetchInventory();
                                   Navigator.of(context).pop();
                                 }
                               },
