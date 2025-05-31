@@ -66,6 +66,6 @@ def recipe_suggest(request):
         resp.headers['Access-Control-Allow-Origin'] = '*'
         return resp, 500
 
-# --- ここからingredient_master_on_createのエントリポイントを追加 ---
-from ingredient_master_on_create import ingredient_master_on_create
+# --- ここからon_create_ingredient_masterのエントリポイントを追加 ---
+from on_create_ingredient_master import on_create_ingredient_master
 # --- ここまで追加 ---
