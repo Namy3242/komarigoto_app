@@ -8,3 +8,4 @@ flask-cors>=4.0.0
 protobuf==5.27.2
 grpcio-tools==1.64.1
 cloudevents
+vertexai>=0.1.0
