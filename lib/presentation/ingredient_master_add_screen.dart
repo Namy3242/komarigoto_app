@@ -35,17 +35,17 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
       'kana': '',
       'synonyms': <String>[],
     }).then((docRef) {
-      log('[addIngredient] Firestore追加完了: docId=[32m[1m[4m[0m[39m[22m[24m${docRef.id}');
+      log('[addIngredient] Firestore追加完了: docId=${docRef.id}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('食材を登録しました')));
+        _formKey.currentState!.reset();
+        setState(() {
+          _category = '主食';
+        });
+      }
     }).catchError((e) {
       log('[addIngredient] Firestore追加エラー: $e', level: 1000);
     });
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('食材を登録しました')));
-      _formKey.currentState!.reset();
-      setState(() {
-        _category = '主食';
-      });
-    }
   }
 
   @override
@@ -132,9 +132,11 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
                         },
                         onDismissed: (_) async {
                           await FirebaseFirestore.instance.collection('ingredients_master').doc(docId).delete();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('${data['name']} をマスタから削除しました')),
-                          );
+                          if (mounted) { // <<< mounted チェックを追加
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('${data['name']} をマスタから削除しました')),
+                            );
+                          }
                         },
                         child: ListTile(
                           leading: data['imageUrl'] != null && data['imageUrl'].toString().isNotEmpty
