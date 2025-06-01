@@ -15,8 +15,8 @@ class FirestoreInventoryRepository implements InventoryRepository {
       final data = doc.data();
       return InventoryItem(
         ingredientId: doc.id,
-        status: data['status'],
-        quantity: data['quantity'],
+        status: data['status'] as String? ?? 'in_stock',
+        quantity: (data['quantity'] as int?) ?? 1, // nullなら1をデフォルト
       );
     }).toList();
   }

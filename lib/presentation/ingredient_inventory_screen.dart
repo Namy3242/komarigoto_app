@@ -98,7 +98,8 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
         for (final doc in masterSnapshot.docs)
           doc.id: {
             'name': doc['name'] ?? '',
-            'category': doc['category'] ?? 'その他',
+            // categoryが空文字やnullなら必ず'その他'にする
+            'category': (doc['category'] as String?)?.isNotEmpty == true ? doc['category'] : 'その他',
             'imageUrl': doc['imageUrl'] ?? '',
             'kana': doc['kana'] ?? '',
             'synonyms': (doc['synonyms'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
@@ -112,25 +113,38 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
         developer.log('Processing inventory item: ${item.ingredientId}, status: ${item.status}', name: 'IngredientInventoryNotifier');
         final master = masterMap[item.ingredientId];
         if (master == null) {
-          developer.log('Master data not found for ingredientId: ${item.ingredientId}. Skipping.', name: 'IngredientInventoryNotifier');
-          continue; // マスタに存在しない場合はスキップ
+          // マスタが見つからない場合も仮カードで表示（最低限の情報のみ）
+          final ingredient = PresentationIngredient(
+            id: item.ingredientId,
+            name: '[未登録]',
+            imageUrl: '',
+            category: 'その他',
+            kana: '',
+            synonyms: [],
+            icon: Icons.help_outline,
+            isAvailable: item.status == 'in_stock',
+          );
+          (categorized['その他'] ??= []).add(ingredient);
+          developer.log('Added [未登録] ingredientId ${item.ingredientId} to category その他', name: 'IngredientInventoryNotifier');
+          continue;
         }
         developer.log('Found master data for ${item.ingredientId}: ${master['name']}', name: 'IngredientInventoryNotifier');
-
+        final category = (master['category'] as String?)?.isNotEmpty == true ? master['category'] : 'その他';
         final ingredient = PresentationIngredient(
           id: item.ingredientId,
           name: master['name'],
           imageUrl: master['imageUrl'],
-          category: master['category'],
+          category: category,
           kana: master['kana'],
           synonyms: List<String>.from(master['synonyms'] ?? []),
           icon: Icons.fastfood, // TODO: アイコンもマスタ連携
           isAvailable: item.status == 'in_stock',
         );
-        (categorized[ingredient.category] ??= []).add(ingredient);
-        developer.log('Added ${ingredient.name} to category ${ingredient.category}. Available: ${ingredient.isAvailable}', name: 'IngredientInventoryNotifier');
+        (categorized[category] ??= []).add(ingredient);
+        developer.log('Added ${ingredient.name} to category $category. Available: ${ingredient.isAvailable}', name: 'IngredientInventoryNotifier');
       }
       developer.log('Categorized ingredients: $categorized', name: 'IngredientInventoryNotifier');
+      developer.log('ingredientsMap keys: [32m${categorized.keys.toList()}[0m', name: 'IngredientInventoryNotifier');
       state = categorized;
       developer.log('State updated with ${state.length} categories.', name: 'IngredientInventoryNotifier');
     } catch (e, stackTrace) {
@@ -162,12 +176,11 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
   void toggleIngredient(String category, PresentationIngredient ingredient) async {
     final newMap = {...state};
     final list = List<PresentationIngredient>.from(newMap[category] ?? []);
-    final idx = list.indexWhere((e) => e.name == ingredient.name);
+    final idx = list.indexWhere((e) => e.id == ingredient.id); // idで比較
     if (idx != -1) {
       final newStatus = !ingredient.isAvailable;
       // Firestoreの在庫状態も更新
       final firestore = FirebaseFirestore.instance;
-      // TODO: userId を使用するように修正
       await firestore.collection('users/$userId/inventory').doc(ingredient.id).update({
         'status': newStatus ? 'in_stock' : 'outof_stock',
       });
@@ -365,27 +378,21 @@ class IngredientCategorySection extends ConsumerWidget {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    // 追加カード
                     _AddIngredientCard(
                       color: color,
                       onTap: () => _showAddIngredientSheet(context, ref, category),
                     ),
-                    // 既存の食材カード
                     ...ingredients.map((ingredient) => Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                       child: IngredientCard(
                         name: ingredient.name,
                         icon: ingredient.icon,
                         isAvailable: ingredient.isAvailable,
-                        onFlip: () => notifier.toggleIngredient(category, ingredient), // notifierを使用
+                        onFlip: () => notifier.toggleIngredient(category, ingredient),
                         color: color,
                         imageUrl: ingredient.imageUrl,
                         onDelete: () async {
-                          // 在庫から削除
-                          final firestore = FirebaseFirestore.instance;
-                          // TODO: userId を使用するように修正
-                          await firestore.collection('users/${notifier.userId}/inventory').doc(ingredient.id).delete();
-                          // Providerを更新してUIに反映
+                          await FirebaseFirestore.instance.collection('users/${notifier.userId}/inventory').doc(ingredient.id).delete();
                           await notifier.fetchInventory();
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -394,7 +401,7 @@ class IngredientCategorySection extends ConsumerWidget {
                           }
                         },
                       ),
-                    )),
+                    )).toList(),
                   ],
                 ),
               ),
@@ -495,93 +502,111 @@ class _AddIngredientSheet extends HookWidget {
                 ? inventorySnapshot.data!.docs.map((doc) => doc['ingredientId'] as String).toSet()
                 : <String>{};
             final filtered = allCandidates.where((i) =>
-              (searchText.value.isEmpty || i.name.contains(searchText.value)) &&
-              !inventoryIds.contains(i.id)
+              !inventoryIds.contains(i.id) &&
+              (searchText.value.isEmpty ||
+                  i.name.toLowerCase().contains(searchText.value.toLowerCase()) ||
+                  i.kana.contains(searchText.value) ||
+                  (i.synonyms.any((s) => s.toLowerCase().contains(searchText.value.toLowerCase()))))
             ).toList();
+
             return Padding(
-              padding: EdgeInsets.only(
-                left: 16, right: 16,
-                top: 24,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-              ),
+              padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 24), // Removed const
               child: SizedBox(
-                height: MediaQuery.of(context).size.height * 0.6,
+                height: MediaQuery.of(context).size.height * 0.75,
                 child: Column(
+                  mainAxisSize: MainAxisSize.max,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('在庫ありで追加'),
+                        const Text('在庫ありで追加', style: TextStyle(fontSize: 16)),
                         Switch(
                           value: isAvailable.value,
-                          onChanged: (v) => isAvailable.value = v,
+                          onChanged: (val) => isAvailable.value = val,
+                          activeColor: Theme.of(context).primaryColor,
                         ),
                       ],
                     ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: searchController,
-                            decoration: const InputDecoration(
-                              prefixIcon: Icon(Icons.search),
-                              hintText: '食材名で検索',
-                              border: OutlineInputBorder(),
-                            ),
-                            onChanged: (v) => searchText.value = v,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: TextField(
+                        controller: searchController,
+                        decoration: InputDecoration(
+                          hintText: '食材名で検索',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
                           ),
+                          filled: true,
+                          fillColor: Colors.grey[200],
+                          suffixIcon: searchText.value.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    searchController.clear();
+                                    searchText.value = '';
+                                  },
+                                )
+                              : null,
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                      ],
+                        onChanged: (value) => searchText.value = value,
+                      ),
                     ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      height: null, // 高さ指定を外す
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 12,
-                        children: filtered.map((ingredient) => SizedBox(
-                          width: 120,
-                          child: Card(
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            child: IngredientCard(
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+                      child: Text(
+                        '候補 (${filtered.length}件)',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: filtered.map((ingredient) {
+                            return IngredientCard(
                               name: ingredient.name,
                               icon: ingredient.icon,
-                              isAvailable: isAvailable.value,
+                              isAvailable: true,
                               onFlip: () async {
-                                // Firestoreに在庫追加（ingredientIdで登録）
-                                final firestore = FirebaseFirestore.instance;
-                                // TODO: userId を使用するように修正
-                                await firestore.collection('users/${notifier.userId}/inventory').doc(ingredient.id).set({
-                                  'ingredientId': ingredient.id,
-                                  'status': isAvailable.value ? 'in_stock' : 'outof_stock',
-                                  'quantity': 1, // 例えばデフォルト数量
-                                  'createdAt': FieldValue.serverTimestamp(), // 追加日時
-                                });
-                                // 在庫管理画面のProviderを更新
-                                if (context.mounted) {
-                                  await notifier.fetchInventory();
-                                  Navigator.of(context).pop();
+                                final userId = notifier.userId;
+                                if (userId.isEmpty) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('ユーザーIDが取得できませんでした。')),
+                                    );
+                                  }
+                                  return;
                                 }
-                              },
-                              color: getCategoryColor(context, category),
-                              onDelete: () async {
-                                // マスタから削除
-                                final firestore = FirebaseFirestore.instance;
-                                await firestore.collection('ingredients_master').doc(ingredient.id).delete();
+                                await FirebaseFirestore.instance
+                                    .collection('users/$userId/inventory')
+                                    .doc(ingredient.id)
+                                    .set({
+                                  'ingredientId': ingredient.id,
+                                  'name': ingredient.name,
+                                  'category': ingredient.category,
+                                  'imageUrl': ingredient.imageUrl,
+                                  'status': isAvailable.value ? 'in_stock' : 'outof_stock', // Corrected string literal
+                                  'addedAt': FieldValue.serverTimestamp(),
+                                });
+
                                 if (context.mounted) {
+                                  Navigator.pop(context);
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('${ingredient.name} をマスタから削除しました')),
+                                    SnackBar(content: Text('${ingredient.name} を在庫に追加しました')),
                                   );
                                 }
+                                notifier.fetchInventory();
                               },
-                            ),
-                          ),
-                        )).toList(),
+                              color: getCategoryColor(context, ingredient.category),
+                              imageUrl: ingredient.imageUrl,
+                              onDelete: null,
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                   ],
