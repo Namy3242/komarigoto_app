@@ -244,35 +244,30 @@ def on_create_ingredient_master(cloud_event: CloudEvent):
             return 
 
     except Exception as e:
-        logging.error(f"[Error] Exception during processing for doc_id '{doc_id}': {e}", exc_info=True) # exc_info=True for full traceback
-        # If an error occurred, and we have a valid doc_id, try to update the document with an error status
+        logging.error(f"[Error] Exception during processing for doc_id '{doc_id}': {e}", exc_info=True)
         if doc_id != "unknown_doc_id_at_start":
             try:
+                logging.info(f"Error handler: Attempting to get document {doc_id} for error update.") # ADDED
                 error_doc_ref = firestore_client.collection('ingredients_master').document(doc_id)
-                # Check if doc exists before trying to update it with error info
-                if error_doc_ref.get().exists: # Check existence again before error update
+                doc_exists = error_doc_ref.get().exists
+                logging.info(f"Error handler: Document {doc_id} exists: {doc_exists}.") # ADDED
+
+                if doc_exists:
                     logging.info(f"Attempting to mark error on document {doc_id} due to exception: {e}")
                     error_update_data = {
                         "processing_error": str(e),
-                        # Preserve generated values if available, otherwise set to empty/default
                         "kana": kana if 'kana' in locals() and kana else "", 
                         "synonyms": synonyms if 'synonyms' in locals() and synonyms else [],
                         "imageUrl": image_url if 'image_url' in locals() and image_url else ""
-                        # Consider if you want to clear imageUrl or keep previous if generation failed partially
                     }
                     error_doc_ref.update(error_update_data)
                     logging.info(f"Marked error on document {doc_id}: {json.dumps(error_update_data)}")
                 else:
-                    # This case means the document was not found even when trying to write the error.
                     logging.warning(f"Document {doc_id} not found when attempting to write error status. Original error: {e}")
             except Exception as inner_e:
-                # This catches errors during the attempt to update with error status
-                logging.error(f"Failed to update document {doc_id} with error status: {inner_e}", exc_info=True)
-        else: # doc_id が "unknown_doc_id_at_start" のままの場合
+                logging.error(f"Error handler: Exception during Firestore error update for {doc_id}: {inner_e}", exc_info=True) # MODIFIED
+        else:
             logging.error(f"doc_id was '{doc_id}' (not properly extracted), cannot mark error on document. Original error: {e}")
         
-        # Regardless of what happened during the error logging attempt (success, doc not found, or new error),
-        # we are in the main exception handler for the original error 'e'.
-        # Return here to signify that the function has handled the exception (by logging it) 
-        # and should not be retried by Cloud Functions.
+        logging.info(f"Error handler: Reached end of main exception block for {doc_id}. Returning.") # ADDED
         return
