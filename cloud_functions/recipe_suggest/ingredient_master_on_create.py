@@ -101,9 +101,9 @@ def generate_image_url(image_prompt: str, doc_id: str) -> str:
     model = ImageGenerationModel.from_pretrained("imagegeneration@006")
 
     try:
-        response_img = model.generate_images( # response 変数名を response_img に変更 (Gemini APIの response と区別)
-            prompt=image_prompt,
-            number_of_images=1
+        response_img = model.generate_images(
+            prompt=image_prompt+"\nCreate it with a size of 200 x 200 pixels.",
+            number_of_images=1,
         )
 
         if not response_img or not hasattr(response_img, 'images') or not response_img.images:

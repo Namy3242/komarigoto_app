@@ -1015,7 +1015,7 @@ class _RecipeFlipCardState extends State<RecipeFlipCard> {
         ),
       ),
       // 材料
-      Padding(
+      SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
