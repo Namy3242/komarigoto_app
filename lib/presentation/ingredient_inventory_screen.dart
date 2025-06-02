@@ -241,6 +241,9 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
             'description': recipe['description'] ?? '',
             'ingredients': recipe['ingredients'] ?? [],
             'steps': recipe['steps'] ?? [],
+            // 画像用フィールドを初期化
+            'titleImageUrl': '',
+            'stepImageUrls': [],
             'createdAt': FieldValue.serverTimestamp(),
           });
         }
@@ -992,10 +995,22 @@ class _RecipeFlipCardState extends State<RecipeFlipCard> {
       Center(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text(
-            widget.recipe['title'] ?? '',
-            style: TextStyle(fontSize: widget.isLarge ? 28 : 20, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.recipe['titleImageUrl'] != null && (widget.recipe['titleImageUrl'] as String).isNotEmpty)
+                Image.network(
+                  widget.recipe['titleImageUrl'],
+                  height: widget.isLarge ? 200 : 100,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported),
+                ),
+              const SizedBox(height: 16),
+              Text(
+                widget.recipe['title'] ?? '',
+                style: TextStyle(fontSize: widget.isLarge ? 28 : 20, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       ),
@@ -1015,17 +1030,27 @@ class _RecipeFlipCardState extends State<RecipeFlipCard> {
         ),
       ),
       // 手順（steps配列の各要素ごとに1ページ）
-      ...List.generate(steps.length, (i) => SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('手順${i + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 8),
-            Text(steps[i], style: const TextStyle(fontSize: 16)),
-          ],
-        ),
-      )),
+      ...List.generate(steps.length, (i) {
+        final stepUrls = widget.recipe['stepImageUrls'] as List<dynamic>?;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (stepUrls != null && stepUrls.length > i && (stepUrls[i] as String).isNotEmpty)
+                Image.network(
+                  stepUrls[i],
+                  height: widget.isLarge ? 200 : 100,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported),
+                ),
+              const SizedBox(height: 8),
+              Text('手順${i + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              const SizedBox(height: 8),
+              Text(steps[i], style: const TextStyle(fontSize: 16)),
+            ],
+          ),
+        );
+      }),
       // 説明（最後に表示）
       if ((widget.recipe['description'] ?? '').toString().isNotEmpty)
         SingleChildScrollView(

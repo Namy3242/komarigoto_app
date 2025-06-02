@@ -5,6 +5,8 @@ class Recipe {
   final String description;
   final List<RecipeIngredient> ingredients;
   final List<String> steps;
+  final String? titleImageUrl;
+  final List<String>? stepImageUrls;
   final String imageUrl;
   final String createdBy;
   final DateTime createdAt;
@@ -24,6 +26,8 @@ class Recipe {
     required this.description,
     required this.ingredients,
     required this.steps,
+    this.titleImageUrl,
+    this.stepImageUrls,
     required this.imageUrl,
     required this.createdBy,
     required this.createdAt,
