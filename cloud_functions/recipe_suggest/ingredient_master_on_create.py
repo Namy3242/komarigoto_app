@@ -138,7 +138,9 @@ def generate_image_url(image_prompt: str, doc_id: str) -> str:
         raise ValueError("FIREBASE_STORAGE_BUCKET is not set")
 
     bucket = storage_client.bucket(FIREBASE_STORAGE_BUCKET)
-    blob = bucket.blob(f"ingredients/{doc_id}.png")
+    # 保存先フォルダを doc_id に応じて切り分け
+    final_folder = 'recipes' if doc_id.startswith('recipe_') else 'ingredients'
+    blob = bucket.blob(f"{final_folder}/{doc_id}.png")
     blob.upload_from_filename(tmp_path, content_type="image/png")
     blob.make_public()
 
