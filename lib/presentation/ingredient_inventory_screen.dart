@@ -212,7 +212,7 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
     errorMessage = null;
     state = Map.from(state); // 通知
 
-    const endpoint = 'https://asia-northeast1-suggestrecipe.cloudfunctions.net/recipe_suggest';
+    const endpoint = 'https://asia-northeast2-komarigoto-app.cloudfunctions.net/recipe_suggest';
     final apiKey = dotenv.env['GEMINI_API_KEY'];
     try {
       final res = await http.post(
