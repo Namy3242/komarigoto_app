@@ -870,6 +870,11 @@ class RecipeListScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    // 在庫あり食材名リストを取得するStream
+    final inventoryStream = FirebaseFirestore.instance
+        .collection('users/$userId/inventory')
+        .where('status', isEqualTo: 'in_stock')
+        .snapshots();
     return Scaffold(
       appBar: AppBar(title: const Text('保存したレシピ一覧')),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -877,92 +882,114 @@ class RecipeListScreen extends HookConsumerWidget {
             .collection('users/$userId/recipes')
             .orderBy('createdAt', descending: true)
             .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+        builder: (context, recipeSnapshot) {
+          if (recipeSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          final docs = snapshot.data?.docs ?? [];
+          final docs = recipeSnapshot.data?.docs ?? [];
           if (docs.isEmpty) {
             return const Center(child: Text('保存されたレシピはありません'));
           }
-          return ListView.builder(
-            itemCount: docs.length,
-            itemBuilder: (context, i) {
-              final data = docs[i].data();
-              final recipeId = docs[i].id;
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: GestureDetector(
-                  onLongPressStart: (details) async {
-                    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-                    final Offset tapPosition = details.globalPosition;
-                    final RelativeRect position = RelativeRect.fromRect(
-                      Rect.fromPoints(
-                        tapPosition,
-                        tapPosition,
-                      ),
-                      Offset.zero & overlay.size,
-                    );
-                    final result = await showMenu<String>(
-                      context: context,
-                      position: position,
-                      items: [
-                        const PopupMenuItem<String>(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(Icons.delete, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text('削除'),
-                            ],
+          // --- ここで在庫Streamをネスト ---
+          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: inventoryStream,
+            builder: (context, inventorySnapshot) {
+              if (inventorySnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              // 在庫あり食材名リスト
+              final inStockNames = inventorySnapshot.data?.docs
+                      .map((doc) => doc['name'] as String? ?? '')
+                      .where((name) => name.isNotEmpty)
+                      .toSet() ??
+                  <String>{};
+              return ListView.builder(
+                itemCount: docs.length,
+                itemBuilder: (context, i) {
+                  final data = docs[i].data();
+                  final recipeId = docs[i].id;
+                  final ingredients = (data['ingredients'] as List<dynamic>? ?? []).cast<String>();
+                  // 全材料が在庫にあるか判定
+                  final canCook = ingredients.isNotEmpty && ingredients.every((name) => inStockNames.contains(name));
+                  return Card(
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: GestureDetector(
+                      onLongPressStart: (details) async {
+                        final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+                        final Offset tapPosition = details.globalPosition;
+                        final RelativeRect position = RelativeRect.fromRect(
+                          Rect.fromPoints(
+                            tapPosition,
+                            tapPosition,
                           ),
-                        ),
-                      ],
-                    );
-                    if (result == 'delete') {
-                      await FirebaseFirestore.instance
-                          .collection('users/$userId/recipes')
-                          .doc(recipeId)
-                          .delete();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('レシピを削除しました')),
+                          Offset.zero & overlay.size,
                         );
-                      }
-                    }
-                  },
-                  child: ListTile(
-                    title: Text(data['title'] ?? ''),
-                    subtitle: Text(data['description'] ?? ''),
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (_) => Dialog(
-                          backgroundColor: Colors.transparent,
-                          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
-                          child: Stack(
-                            children: [
-                              Center(
-                                child: RecipeFlipCard(
-                                  recipe: data,
-                                  isLarge: true,
-                                ),
+                        final result = await showMenu<String>(
+                          context: context,
+                          position: position,
+                          items: [
+                            const PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text('削除'),
+                                ],
                               ),
-                              Positioned(
-                                right: 0,
-                                top: 0,
-                                child: IconButton(
-                                  icon: const Icon(Icons.close, size: 32, color: Colors.black54),
-                                  onPressed: () => Navigator.of(context).pop(),
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
+                        );
+                        if (result == 'delete') {
+                          await FirebaseFirestore.instance
+                              .collection('users/$userId/recipes')
+                              .doc(recipeId)
+                              .delete();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('レシピを削除しました')),
+                            );
+                          }
+                        }
+                      },
+                      child: ListTile(
+                        title: Text(data['title'] ?? ''),
+                        subtitle: Text(data['description'] ?? ''),
+                        trailing: Icon(
+                          canCook ? Icons.check_circle : Icons.cancel,
+                          color: canCook ? Colors.green : Colors.red,
                         ),
-                      );
-                    },
-                  ),
-                ),
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => Dialog(
+                              backgroundColor: Colors.transparent,
+                              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+                              child: Stack(
+                                children: [
+                                  Center(
+                                    child: RecipeFlipCard(
+                                      recipe: data,
+                                      isLarge: true,
+                                    ),
+                                  ),
+                                  Positioned(
+                                    right: 0,
+                                    top: 0,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.close, size: 32, color: Colors.black54),
+                                      onPressed: () => Navigator.of(context).pop(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
               );
             },
           );
