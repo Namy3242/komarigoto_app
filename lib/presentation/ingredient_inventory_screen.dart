@@ -236,16 +236,16 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
         final batch = FirebaseFirestore.instance.batch();
         final recipesCol = FirebaseFirestore.instance.collection('users/$userId/recipes');
         for (final recipe in recipes) {
-          batch.set(recipesCol.doc(), {
+          final data = {
             'title': recipe['title'] ?? '',
             'description': recipe['description'] ?? '',
             'ingredients': recipe['ingredients'] ?? [],
             'steps': recipe['steps'] ?? [],
-            // 画像用フィールドを初期化
             'titleImageUrl': '',
             'stepImageUrls': [],
             'createdAt': FieldValue.serverTimestamp(),
-          });
+          };
+          batch.set(recipesCol.doc(), data);
         }
         await batch.commit();
         isLoading = false;
@@ -274,7 +274,7 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
   }
 }
 
-// --- 在庫管理画面（StatefulWidget化） ---
+// --- 冷蔵庫画面（StatefulWidget化） ---
 class IngredientInventoryScreen extends ConsumerStatefulWidget {
   const IngredientInventoryScreen({super.key});
 
@@ -310,6 +310,7 @@ class _IngredientInventoryScreenState extends ConsumerState<IngredientInventoryS
     });
 
     return Scaffold(
+      appBar: AppBar(title: const Text('冷蔵庫')),
       body: ListView(
         children: [
           for (final category in [
@@ -513,7 +514,7 @@ class _AddIngredientSheet extends HookWidget {
             ).toList();
 
             return Padding(
-              padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 24), // Removed const
+              padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
               child: SizedBox(
                 height: MediaQuery.of(context).size.height * 0.75,
                 child: Column(
@@ -592,7 +593,7 @@ class _AddIngredientSheet extends HookWidget {
                                   'name': ingredient.name,
                                   'category': ingredient.category,
                                   'imageUrl': ingredient.imageUrl,
-                                  'status': isAvailable.value ? 'in_stock' : 'outof_stock', // Corrected string literal
+                                  'status': isAvailable.value ? 'in_stock' : 'outof_stock',
                                   'addedAt': FieldValue.serverTimestamp(),
                                 });
 
@@ -854,8 +855,8 @@ class _MainBottomNavState extends State<MainBottomNav> {
         currentIndex: _selectedIndex,
         onTap: (i) => setState(() => _selectedIndex = i),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: '在庫管理'),
-          BottomNavigationBarItem(icon: Icon(Icons.add_box), label: 'マスタ追加'),
+          BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: '冷蔵庫'),
+          BottomNavigationBarItem(icon: Icon(Icons.add_box), label: '食材候補'),
           BottomNavigationBarItem(icon: Icon(Icons.restaurant_menu), label: 'レシピ'), // 追加
         ],
       ),
@@ -909,6 +910,13 @@ class RecipeListScreen extends HookConsumerWidget {
                   final data = docs[i].data();
                   final recipeId = docs[i].id;
                   final ingredients = (data['ingredients'] as List<dynamic>? ?? []).cast<String>();
+                  // 作成日時をDateTimeに変換
+                  final Timestamp? createdAtTs = data['createdAt'] as Timestamp?;
+                  final String createdAtStr = createdAtTs != null
+                      ? DateTime.fromMillisecondsSinceEpoch(createdAtTs.millisecondsSinceEpoch)
+                          .toLocal()
+                          .toString().substring(0, 16).replaceFirst('T', ' ')
+                      : '';
                   // 全材料が在庫にあるか判定
                   final canCook = ingredients.isNotEmpty && ingredients.every((name) => inStockNames.contains(name));
                   return Card(
@@ -954,7 +962,14 @@ class RecipeListScreen extends HookConsumerWidget {
                       },
                       child: ListTile(
                         title: Text(data['title'] ?? ''),
-                        subtitle: Text(data['description'] ?? ''),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (createdAtStr.isNotEmpty)
+                              Text('作成日時: $createdAtStr', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(data['description'] ?? ''),
+                          ],
+                        ),
                         trailing: Icon(
                           canCook ? Icons.check_circle : Icons.cancel,
                           color: canCook ? Colors.green : Colors.red,

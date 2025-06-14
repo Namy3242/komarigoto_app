@@ -1,4 +1,4 @@
-/// ユーザーの在庫管理用エンティティ
+/// ユーザーの冷蔵庫用エンティティ
 class InventoryItem {
   final String ingredientId;
   final String status; // "in_stock", "outof_stock"

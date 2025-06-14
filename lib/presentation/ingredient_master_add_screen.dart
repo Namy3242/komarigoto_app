@@ -51,7 +51,7 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('マスタ食材追加')),
+      appBar: AppBar(title: const Text('食材候補追加')),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -89,7 +89,7 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
             ),
             const SizedBox(height: 32),
             const Divider(),
-            const Text('登録済み食材一覧', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('登録済み食材候補一覧', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -122,7 +122,7 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
                             context: context,
                             builder: (ctx) => AlertDialog(
                               title: const Text('削除確認'),
-                              content: Text('「${data['name']}」をマスタから削除しますか？'),
+                              content: Text('「${data['name']}」を食材候補から削除しますか？'),
                               actions: [
                                 TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')),
                                 TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('削除', style: TextStyle(color: Colors.red))),
@@ -134,7 +134,7 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
                           await FirebaseFirestore.instance.collection('ingredients_master').doc(docId).delete();
                           if (mounted) { // <<< mounted チェックを追加
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('${data['name']} をマスタから削除しました')),
+                              SnackBar(content: Text('${data['name']} を食材候補から削除しました')),
                             );
                           }
                         },
