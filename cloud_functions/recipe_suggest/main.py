@@ -34,7 +34,7 @@ def generate_blog_content(title: str) -> str:
     # SEO対策プロンプト（autogenblog2wpを参考に）
     prompt = f"""
 【プロンプト例】
-今日は「 {title}」について、月収10万円を目指す料理ブロガー向けの収益化記事を作成してください。
+今日は「 {title}」について、料理ブロガー向けの収益化記事を作成してください。
 
 ターゲット：忙しい共働き夫婦（30-40代）
 悩み：時短で美味しい夕食を作りたい
@@ -54,7 +54,16 @@ def generate_blog_content(title: str) -> str:
 
 【出力形式】
 
-・WordPressにそのままpythonで自動投稿できるように、HTML形式（<h2>や<ul>、<li>、<p>、<strong>などのタグを適切に使う）のみで出力してください。
+・HTML形式（<h2>や<ul>、<li>、<p>、<strong>などのタグを適切に使う）のみで出力してください。
+・タイトルは<h1>タグで、各セクションの見出しは<h2>タグで表現してください。
+・アフィリエイト商品は<strong>タグで強調し、リンクは<a>タグで設定してください。
+・箇条書きは<ul>と<li>タグを使ってください。
+・コードブロックは<pre>タグで囲み、<code>タグを使ってください。
+・画像は<img>タグで挿入し、alt属性を設定してください。
+・SEO対策のため、キーワードは太字（<strong>）で強調してください。
+・記事全体を通して、読者が共感しやすいように、親しみやすい口調で書いてください。
+・記事の最後には、読者に行動を促すCTA（Call to Action）を含めてください。
+・REST APIで自動投稿するため、contentフィールドに直接HTMLを設定できるように回答してください。
 ・改行や段落もHTMLタグで表現してください。
 
 """
@@ -122,7 +131,9 @@ def post_to_wordpress(post_data: dict) -> bool:
     payload = {
         "title": post_data.get('title', '無題'),
         "content": post_data.get('content', 'デフォルトの投稿内容です。'),
-        "status": post_data.get('status', 'publish')
+        "status": post_data.get('status', 'publish'),
+        # "tag": 'recipe',
+        # "categories": ['cook'],
     }
 
     headers = {
@@ -201,17 +212,36 @@ def recipe_suggest(request):
         return add_cors_headers(response)
     try:
         data = request.get_json()
+        # リクエストからパラメータ取得
         ingredients = data.get("ingredients", [])
+        meal_type = data.get("mealType", "夕食")
+        extra_cond = data.get("extraCondition", "")
         if not ingredients:
             resp = jsonify({"error": "ingredients required"})
             return add_cors_headers(resp), 400
         # Geminiへのプロンプト生成
         prompt = f"""
-        以下の食材だけを使って作れる家庭料理のレシピを3件、日本語で提案してください。
-        食材: {', '.join(ingredients)}
-        各レシピはタイトル・説明・材料・手順を含めてJSON配列で返してください。
-        例: [{{"title": "○○", "description": "○○", "ingredients": ["○○"], "steps": ["○○"]}}, ...]
-        """        
+以下の食事タイプに合うレシピを、在庫食材のみで3件、日本語で提案してください。
+食事タイプ: {meal_type}
+"""
+        if extra_cond:
+            prompt += f"追加条件: {extra_cond}\n"
+        prompt += f"食材: {', '.join(ingredients)}\n"
+        prompt += (
+            "必ず以下の英語キーでJSON配列として出力してください。\n"
+            "[\n"
+            "  {\n"
+            "    \"title\": string,\n"
+            "    \"description\": string,\n"
+            "    \"ingredients\": string[] または string の配列,\n"
+            "    \"steps\": string[] または string の配列\n"
+            "  }, ...\n"
+            "]\n"
+            "日本語で内容を記述し、キーは必ず英語（title, description, ingredients, steps）で統一してください。\n"
+            "手順は2-5ステップくらいで時短を意識したものとしてください。\n"
+            "説明やマークダウン、JSON以外の出力は不要です。"
+        )
+        
         payload = {
             "contents": [{"parts": [{"text": prompt}]}]
         }
@@ -236,7 +266,7 @@ def recipe_suggest(request):
         text = gemini_data["candidates"][0]["content"]["parts"][0]["text"]
         logging.info('Gemini APIレスポンス長: %d文字, プレビュー: %s', 
                    len(text), text[:100].replace('\n', ' '))
-        
+        print('Gemini APIレスポンス:', text)  # デバッグ用に最初の300文字を表示
         match = re.search(r'\[.*\]', text, re.DOTALL)
         if not match:
             logging.error('Geminiレスポンスから有効なJSONが見つかりません: %s', text[:300])

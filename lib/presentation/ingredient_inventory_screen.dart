@@ -12,6 +12,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../domain/entities/ingredient.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer; // developer.log を使用するためにインポート
+import 'package:url_launcher/url_launcher.dart';
+import 'auth_service.dart'; // AuthServiceをインポート
 
 // presentation層用の拡張Ingredientクラス
 class PresentationIngredient extends Ingredient {
@@ -41,6 +43,8 @@ Color getCategoryColor(BuildContext context, String category) {
       return scheme.primaryContainer;
     case '調味料':
       return scheme.surfaceVariant;
+    case '香辛料':
+      return scheme.errorContainer;
     case 'その他':
     default:
       return scheme.background;
@@ -200,7 +204,7 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
   }
 
   // --- レシピ提案・保存 ---
-  Future<void> suggestAndSaveRecipes(BuildContext context) async {
+  Future<void> suggestAndSaveRecipes(BuildContext context, String mealType, String extraCondition) async {
     final ingredientsMap = state;
     final available = ingredientsMap.values.expand((list) => list).where((i) => i.isAvailable).map((i) => i.name).toList();
     if (available.isEmpty) {
@@ -221,7 +225,11 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
           'Content-Type': 'application/json',
           'X-API-KEY': apiKey ?? '',
         },
-        body: jsonEncode({'ingredients': available}),
+        body: jsonEncode({
+          'ingredients': available,
+          'mealType': mealType,
+          'extraCondition': extraCondition,
+        }),
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -310,11 +318,42 @@ class _IngredientInventoryScreenState extends ConsumerState<IngredientInventoryS
     });
 
     return Scaffold(
-      appBar: AppBar(title: const Text('冷蔵庫')),
+      appBar: AppBar(
+        title: const Text('冷蔵庫'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: () async {
+              final shouldLogout = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('ログアウト'),
+                  content: const Text('ログアウトしますか？'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('キャンセル'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('ログアウト'),
+                    ),
+                  ],
+                ),
+              );
+              if (shouldLogout == true) {
+                final authService = AuthService();
+                await authService.signOut();
+              }
+            },
+          ),
+        ],
+      ),
       body: ListView(
         children: [
           for (final category in [
-            '主食', '肉・魚・卵・豆', '野菜', 'きのこ', '調味料', 'その他'
+            '主食', '肉・魚・卵・豆', '野菜', 'きのこ', '調味料', '香辛料', 'その他'
           ])
             IngredientCategorySection(
               category: category,
@@ -323,7 +362,48 @@ class _IngredientInventoryScreenState extends ConsumerState<IngredientInventoryS
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: isLoading ? null : () => notifier.suggestAndSaveRecipes(context),
+        onPressed: isLoading ? null : () {
+          // レシピ生成用入力フォームを表示
+          showDialog(
+            context: context,
+            builder: (context) {
+              String selectedType = '夕食';
+              final TextEditingController extraController = TextEditingController();
+              return AlertDialog(
+                title: const Text('レシピ条件入力'),
+                content: StatefulBuilder(
+                  builder: (context, setState) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: selectedType,
+                        decoration: const InputDecoration(labelText: '食事タイプ'),
+                        items: const [
+                          '朝食', '昼食', '夕食', '作り置き', '調味料(タレ・ソース・ドレッシングなど)',
+                        ].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (val) => setState(() => selectedType = val!),
+                      ),
+                      TextField(
+                        controller: extraController,
+                        decoration: const InputDecoration(labelText: '追加条件'),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('キャンセル')),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      notifier.suggestAndSaveRecipes(context, selectedType, extraController.text);
+                    },
+                    child: const Text('レシピ生成'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
         tooltip: '今ある食材で作れるレシピ',
         child: isLoading
             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
@@ -377,7 +457,7 @@ class IngredientCategorySection extends ConsumerWidget {
             ),
             Container(
               color: Colors.transparent,
-              height: 164,
+              height: 260, // カテゴリ内の高さを164→260に拡大
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -615,9 +695,9 @@ class _AddIngredientSheet extends HookWidget {
                     ),
                   ],
                 ),
-              ),
-            );
-          },
+                ),
+              );
+            },
         );
       },
     );
@@ -648,6 +728,20 @@ class IngredientCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // --- 購入リンク生成 ---
+    String encode(String s) => Uri.encodeComponent(s);
+    final amazonUrl = 'https://www.amazon.co.jp/s?k=' + encode(name);
+    final rakutenUrl = 'https://search.rakuten.co.jp/search/mall/' + encode(name);
+    // TODO: 生協API連携時はここに追加
+    // TODO: Gemini等AIで商品レコメンドを取得する場合はここでAPI呼び出し
+
+    Future<void> openUrl(String url) async {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    }
+
     return GestureDetector(
       onTap: onFlip,
       onLongPressStart: onDelete != null
@@ -685,8 +779,8 @@ class IngredientCard extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 350),
         curve: Curves.easeInOut,
-        width: 110,
-        height: 150,
+        width: 200, // 幅をさらに拡大
+        height: 240, // 高さをさらに拡大
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
         decoration: BoxDecoration(
           color: isAvailable ? color : Colors.white,
@@ -708,7 +802,7 @@ class IngredientCard extends StatelessWidget {
             // 上部: 画像 or アイコン
             Container(
               width: double.infinity,
-              height: 60,
+              height: 120, // 画像エリアも拡大
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: const BorderRadius.only(
@@ -726,17 +820,17 @@ class IngredientCard extends StatelessWidget {
                         imageUrl!,
                         fit: BoxFit.cover,
                         width: double.infinity,
-                        height: 60,
-                        errorBuilder: (context, error, stackTrace) => Icon(icon, size: 40, color: isAvailable ? color.darken(0.18) : Colors.grey),
+                        height: 120,
+                        errorBuilder: (context, error, stackTrace) => Icon(icon, size: 64, color: isAvailable ? color.darken(0.18) : Colors.grey),
                       ),
                     )
                   : Icon(
                       icon,
-                      size: 40,
+                      size: 64,
                       color: isAvailable ? color.darken(0.18) : Colors.grey,
                     ),
             ),
-            // 下部: テキスト＋ラベル
+            // 下部: テキスト＋ラベル＋購入ボタン
             Container(
               width: double.infinity,
               decoration: BoxDecoration(
@@ -803,6 +897,23 @@ class IngredientCard extends StatelessWidget {
                             ],
                           ),
                   ),
+                  // --- 購入ボタン ---
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.shopping_cart, color: Colors.blueAccent),
+                        tooltip: 'Amazonで探す',
+                        onPressed: () => openUrl(amazonUrl),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.shopping_bag, color: Colors.deepOrange),
+                        tooltip: '楽天で探す',
+                        onPressed: () => openUrl(rakutenUrl),
+                      ),
+                      // TODO: 生協APIやAIレコメンドボタンもここに追加可能
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -833,12 +944,12 @@ class MainBottomNav extends StatefulWidget {
   State<MainBottomNav> createState() => _MainBottomNavState();
 }
 
-class _MainBottomNavState extends State<MainBottomNav> {
-  int _selectedIndex = 0;
+class _MainBottomNavState extends State<MainBottomNav> {  int _selectedIndex = 0;
   final List<Widget> _screens = [
     const IngredientInventoryScreen(),
+    const MoodRecipeScreen(), // 気分タブを2番目に移動
+    const RecipeListScreen(),
     const IngredientMasterAddScreen(),
-    const RecipeListScreen(), // 追加
   ];
 
   @override
@@ -854,10 +965,16 @@ class _MainBottomNavState extends State<MainBottomNav> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (i) => setState(() => _selectedIndex = i),
-        items: const [
+        backgroundColor: Colors.white,
+        selectedItemColor: Colors.deepPurple,
+        unselectedItemColor: Colors.grey,
+        selectedLabelStyle: TextStyle(color: Colors.deepPurple, fontSize: 13, fontWeight: FontWeight.bold),
+        unselectedLabelStyle: TextStyle(color: Colors.grey, fontSize: 12),
+        showUnselectedLabels: true,        items: const [
           BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: '冷蔵庫'),
+          BottomNavigationBarItem(icon: Icon(Icons.emoji_emotions), label: '気分'),
+          BottomNavigationBarItem(icon: Icon(Icons.restaurant_menu), label: 'レシピ'),
           BottomNavigationBarItem(icon: Icon(Icons.add_box), label: '食材候補'),
-          BottomNavigationBarItem(icon: Icon(Icons.restaurant_menu), label: 'レシピ'), // 追加
         ],
       ),
     );
@@ -877,7 +994,38 @@ class RecipeListScreen extends HookConsumerWidget {
         .where('status', isEqualTo: 'in_stock')
         .snapshots();
     return Scaffold(
-      appBar: AppBar(title: const Text('保存したレシピ一覧')),
+      appBar: AppBar(
+        title: const Text('保存したレシピ一覧'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: () async {
+              final shouldLogout = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('ログアウト'),
+                  content: const Text('ログアウトしますか？'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('キャンセル'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('ログアウト'),
+                    ),
+                  ],
+                ),
+              );
+              if (shouldLogout == true) {
+                final authService = AuthService();
+                await authService.signOut();
+              }
+            },
+          ),
+        ],
+      ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('users/$userId/recipes')
@@ -917,8 +1065,13 @@ class RecipeListScreen extends HookConsumerWidget {
                           .toLocal()
                           .toString().substring(0, 16).replaceFirst('T', ' ')
                       : '';
-                  // 全材料が在庫にあるか判定
-                  final canCook = ingredients.isNotEmpty && ingredients.every((name) => inStockNames.contains(name));
+                  // 全材料が在庫にあるか判定（調味料・水は在庫不要）
+                  final canCook = ingredients.isNotEmpty && ingredients.every((name) {
+                    if (name.contains('調味料') || name == '水') {
+                      return true;
+                    }
+                    return inStockNames.contains(name);
+                  });
                   return Card(
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: GestureDetector(
@@ -1026,12 +1179,27 @@ class RecipeFlipCard extends StatefulWidget {
 
 class _RecipeFlipCardState extends State<RecipeFlipCard> {
   int _page = 0;
-  late final List<Widget> _pages;
+  late List<String> _ingredients; // 材料リストをStateで管理
+  late final List<dynamic> _steps;
+  late final List<dynamic>? _stepImageUrls;
+  late final String _title;
+  late final String _description;
+  late final String _titleImageUrl;
+  late List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
-    final steps = (widget.recipe['steps'] as List<dynamic>? ?? []);
+    _ingredients = List<String>.from(widget.recipe['ingredients'] ?? []);
+    _steps = List<dynamic>.from(widget.recipe['steps'] ?? []);
+    _stepImageUrls = widget.recipe['stepImageUrls'] as List<dynamic>?;
+    _title = widget.recipe['title'] ?? '';
+    _description = widget.recipe['description'] ?? '';
+    _titleImageUrl = widget.recipe['titleImageUrl'] ?? '';
+    _buildPages();
+  }
+
+  void _buildPages() {
     _pages = [
       // タイトル
       Center(
@@ -1040,15 +1208,15 @@ class _RecipeFlipCardState extends State<RecipeFlipCard> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (widget.recipe['titleImageUrl'] != null && (widget.recipe['titleImageUrl'] as String).isNotEmpty)
+              if (_titleImageUrl.isNotEmpty)
                 Image.network(
-                  widget.recipe['titleImageUrl'],
+                  _titleImageUrl,
                   height: widget.isLarge ? 200 : 100,
                   errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported),
                 ),
               const SizedBox(height: 16),
               Text(
-                widget.recipe['title'] ?? '',
+                _title,
                 style: TextStyle(fontSize: widget.isLarge ? 28 : 20, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
@@ -1064,40 +1232,53 @@ class _RecipeFlipCardState extends State<RecipeFlipCard> {
           children: [
             const Text('材料', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 8),
-            ...List.generate(
-              (widget.recipe['ingredients'] as List<dynamic>? ?? []).length,
-              (i) => Text('・${widget.recipe['ingredients'][i]}', style: const TextStyle(fontSize: 16)),
-            ),
+            ...List.generate(_ingredients.length, (i) {
+              final ingredient = _ingredients[i];
+              return GestureDetector(
+                onTap: () => _showSwapDialog(i, ingredient),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    '・$ingredient',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.blue,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              );
+            }),
           ],
         ),
       ),
-      // 手順（steps配列の各要素ごとに1ページ）
-      ...List.generate(steps.length, (i) {
-        final stepUrls = widget.recipe['stepImageUrls'] as List<dynamic>?;
+      // 手順
+      ...List.generate(_steps.length, (i) {
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (stepUrls != null && stepUrls.length > i && (stepUrls[i] as String).isNotEmpty)
+              if (_stepImageUrls != null && _stepImageUrls.length > i && (_stepImageUrls[i] as String).isNotEmpty)
                 Image.network(
-                  stepUrls[i],
+                  _stepImageUrls[i],
                   height: widget.isLarge ? 200 : 100,
                   errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported),
                 ),
               const SizedBox(height: 8),
               Text('手順${i + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               const SizedBox(height: 8),
-              Text(steps[i], style: const TextStyle(fontSize: 16)),
+              // 手順テキスト内の食材名にリンクを付与
+              _buildStepTextWithLinks(_steps[i]),
             ],
           ),
         );
       }),
-      // 説明（最後に表示）
-      if ((widget.recipe['description'] ?? '').toString().isNotEmpty)
+      // 説明
+      if (_description.isNotEmpty)
         SingleChildScrollView(
           padding: const EdgeInsets.all(16),
-          child: Text(widget.recipe['description'] ?? '', style: const TextStyle(fontSize: 16)),
+          child: Text(_description, style: const TextStyle(fontSize: 16)),
         ),
     ];
   }
@@ -1112,6 +1293,144 @@ class _RecipeFlipCardState extends State<RecipeFlipCard> {
     setState(() {
       _page = (_page - 1 + _pages.length) % _pages.length;
     });
+  }
+
+  Future<void> _showSwapDialog(int index, String ingredient) async {
+    // ingredientのカテゴリをFirestoreから取得
+    final firestore = FirebaseFirestore.instance;
+    final masterSnap = await firestore
+        .collection('ingredients_master')
+        .where('name', isEqualTo: ingredient)
+        .limit(1)
+        .get();
+    if (masterSnap.docs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('食材マスタ情報が見つかりません')),
+      );
+      return;
+    }
+    final category = masterSnap.docs.first['category'] ?? 'その他';
+    // 冷蔵庫の同カテゴリ在庫を取得
+    final inventorySnap = await firestore
+        .collection('users/${FirebaseAuth.instance.currentUser?.uid}/inventory')
+        .get();
+    final masterAll = await firestore
+        .collection('ingredients_master')
+        .get();
+    final masterMap = {
+      for (final doc in masterAll.docs)
+        doc.id: doc.data(),
+    };
+    final sameCategory = <String>[];
+    for (final doc in inventorySnap.docs) {
+      final ingId = doc['ingredientId'] as String?;
+      if (ingId == null) continue;
+      final master = masterMap[ingId];
+      if (master == null) continue;
+      if ((master['category'] ?? 'その他') == category) {
+        sameCategory.add(master['name'] ?? '');
+      }
+    }
+    if (sameCategory.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('冷蔵庫に同じカテゴリの食材がありません')),
+      );
+      return;
+    }
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('"$ingredient" を入れ替え'),
+        content: SizedBox(
+          width: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final name in sameCategory)
+                ListTile(
+                  title: Text(name),
+                  onTap: () => Navigator.pop(context, name),
+                  enabled: name != ingredient,
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('キャンセル')),
+        ],
+      ),
+    );
+    if (selected != null && selected != ingredient) {
+      setState(() {
+        _ingredients[index] = selected;
+        _buildPages();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('"$ingredient" を "$selected" に入れ替えました')),
+      );
+    }
+  }
+
+  Future<void> _regenerateRecipe() async {
+    // レシピ再生成API呼び出し
+    final notifier = ProviderScope.containerOf(context, listen: false).read(ingredientInventoryProvider.notifier);
+    await notifier.suggestAndSaveRecipes(context, '夕食', '（材料入れ替え再生成）');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('新しい材料でレシピを再生成しました')),
+      );
+    }
+  }
+
+  // 手順テキスト内の食材名にリンクを付与するWidget
+  Widget _buildStepTextWithLinks(String stepText) {
+    // 材料リストに含まれる食材名を抽出し、テキスト内でリンク化
+    final spans = <InlineSpan>[];
+    String rest = stepText;
+    while (rest.isNotEmpty) {
+      int minIndex = rest.length;
+      String? foundIngredient;
+      for (final ingredient in _ingredients) {
+        final idx = rest.indexOf(ingredient);
+        if (idx != -1 && idx < minIndex) {
+          minIndex = idx;
+          foundIngredient = ingredient;
+        }
+      }
+      if (foundIngredient == null) {
+        spans.add(TextSpan(text: rest));
+        break;
+      }
+      if (minIndex > 0) {
+        spans.add(TextSpan(text: rest.substring(0, minIndex)));
+      }
+      // foundIngredientはnullでないのでStringとして扱う
+      final ingredientStr = foundIngredient;
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: GestureDetector(
+            onTap: () {
+              final idx = _ingredients.indexOf(ingredientStr);
+              if (idx != -1) {
+                _showSwapDialog(idx, ingredientStr);
+              }
+            },
+            child: Text(
+              ingredientStr,
+              style: const TextStyle(
+                color: Colors.blue,
+                decoration: TextDecoration.underline,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+      );
+      rest = rest.substring(minIndex + ingredientStr.length);
+    }
+    return RichText(text: TextSpan(style: const TextStyle(fontSize: 16, color: Colors.black), children: spans));
   }
 
   @override
@@ -1159,12 +1478,224 @@ class _RecipeFlipCardState extends State<RecipeFlipCard> {
               tooltip: '閉じる',
             ),
           ),
+          // 再生成用FAB（全ページで表示）
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton.extended(
+              onPressed: _regenerateRecipe,
+              icon: const Icon(Icons.refresh),
+              label: const Text('この材料で再生成'),
+              heroTag: 'regenerate_recipe',
+            ),
+          ),
         ],
       ),
     );
     return GestureDetector(
       onTap: () => Navigator.of(context).maybePop(),
       child: card,
+    );
+  }
+}
+
+// --- 気分レシピ画面 ---
+class MoodRecipeScreen extends HookConsumerWidget {
+  const MoodRecipeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final notifier = ref.read(ingredientInventoryProvider.notifier);
+    final isLoading = notifier.isLoading;
+    // --- 選択肢 ---
+    final cookingMethods = [
+      '焼く', '蒸す', '茹でる', '煮る', '揚げる', '炒める', '和える', '炊く', '漬ける', 'オーブン', '電子レンジ'
+    ];
+    final cuisines = [
+      '和風', '洋風', '中華', 'イタリアン', 'フレンチ', 'エスニック', '韓国', '北欧', 'ジャンク', 'アジアン', 'アメリカン',
+    ];
+    // 料理に直接関係なさそうなカテゴリを「変わり種」として分離
+    final kawaridane = [
+      '宇宙食風',
+      'アニメ飯',
+      'パーティー',
+      'キャンプ',
+      '映え',
+      'ノスタルジー',
+      'サバイバル',
+      '未来感',
+      '昭和レトロ',
+      '推し活',
+      'ご当地',
+      '推理',
+      'ゲーム飯',
+      '映画モチーフ',
+      'ファンタジー',
+      'ミステリー',
+      'スポーツ観戦',
+      'お祭り',
+      '深夜',
+      '失恋',
+      '勝負メシ',
+      '癒し',
+      '冒険',
+      'お祝い',
+      'おまじない',
+      '非日常',
+      '旅気分',
+      '推し色',
+    ];
+    final preferences = [
+      '時短', '味重視', 'ヘルシー', '節約', 'ボリューム', '見た目重視', '作り置き', '簡単'
+    ];
+    // --- State ---
+    final selectedMethods = useState<List<String>>([]);
+    final selectedCuisines = useState<List<String>>([]);
+    final selectedPreferences = useState<List<String>>([]);
+    final freewordController = useTextEditingController();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('気分でレシピ提案'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: () async {
+              final shouldLogout = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('ログアウト'),
+                  content: const Text('ログアウトしますか？'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('キャンセル'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('ログアウト'),
+                    ),
+                  ],
+                ),
+              );
+              if (shouldLogout == true) {
+                final authService = AuthService();
+                await authService.signOut();
+              }
+            },
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('調理法', style: theme.textTheme.titleMedium),
+              Wrap(
+                spacing: 8,
+                children: cookingMethods.map((m) => ChoiceChip(
+                  label: Text(m),
+                  selected: selectedMethods.value.contains(m),
+                  onSelected: (v) {
+                    final list = [...selectedMethods.value];
+                    if (v) {
+                      if (!list.contains(m)) list.add(m);
+                    } else {
+                      list.remove(m);
+                    }
+                    selectedMethods.value = list;
+                  },
+                )).toList(),
+              ),
+              const SizedBox(height: 20),
+              Text('料理ジャンル', style: theme.textTheme.titleMedium),
+              Wrap(
+                spacing: 8,
+                children: cuisines.map((c) => ChoiceChip(
+                  label: Text(c),
+                  selected: selectedCuisines.value.contains(c),
+                  onSelected: (v) {
+                    final list = [...selectedCuisines.value];
+                    if (v) {
+                      if (!list.contains(c)) list.add(c);
+                    } else {
+                      list.remove(c);
+                    }
+                    selectedCuisines.value = list;
+                  },
+                )).toList(),
+              ),
+              const SizedBox(height: 20),
+              // 変わり種カテゴリ
+              Text('変わり種', style: theme.textTheme.titleMedium),
+              Wrap(
+                spacing: 8,
+                children: kawaridane.map((k) => ChoiceChip(
+                  label: Text(k),
+                  selected: selectedCuisines.value.contains(k),
+                  onSelected: (v) {
+                    final list = [...selectedCuisines.value];
+                    if (v) {
+                      if (!list.contains(k)) list.add(k);
+                    } else {
+                      list.remove(k);
+                    }
+                    selectedCuisines.value = list;
+                  },
+                )).toList(),
+              ),
+              const SizedBox(height: 20),
+              Text('こだわり', style: theme.textTheme.titleMedium),
+              Wrap(
+                spacing: 8,
+                children: preferences.map((p) => ChoiceChip(
+                  label: Text(p),
+                  selected: selectedPreferences.value.contains(p),
+                  onSelected: (v) {
+                    final list = [...selectedPreferences.value];
+                    if (v) {
+                      if (!list.contains(p)) list.add(p);
+                    } else {
+                      list.remove(p);
+                    }
+                    selectedPreferences.value = list;
+                  },
+                )).toList(),
+              ),
+              const SizedBox(height: 20),
+              Text('フリーワード', style: theme.textTheme.titleMedium),
+              TextField(
+                controller: freewordController,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 40),
+              Text('選択した条件でレシピを提案します。', style: theme.textTheme.bodySmall),
+            ],
+          ),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: isLoading
+            ? null
+            : () {
+                final method = selectedMethods.value.join(' ');
+                final cuisine = selectedCuisines.value.join(' ');
+                final pref = selectedPreferences.value.join(' ');
+                final freeword = freewordController.text.trim();
+                final extra = [method, cuisine, pref, freeword].where((e) => e.isNotEmpty).join(' ');
+                notifier.suggestAndSaveRecipes(context, '気分', extra);
+              },
+        icon: isLoading
+            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
+            : const Icon(Icons.restaurant),
+        label: const Text('レシピ生成'),
+      ),
     );
   }
 }

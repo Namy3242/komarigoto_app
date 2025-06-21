@@ -102,7 +102,12 @@ def generate_image_url(image_prompt: str, doc_id: str) -> str:
 
     try:
         response_img = model.generate_images(
-            prompt=image_prompt+"\nCreate it with a size of 200 x 200 pixels.",
+            prompt=(
+            "ちいかわのようなゆるキャラ風のコミックストリップを描いてください。"
+            + "以下の内容を基に、４コマ漫画のようにオチがある必要があります。"
+            + "画像は正方形にしてください。"
+            + image_prompt
+            ),
             number_of_images=1,
         )
 

@@ -2,6 +2,7 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'auth_service.dart'; // AuthServiceをインポート
 
 class IngredientMasterAddScreen extends StatefulWidget {
   const IngredientMasterAddScreen({Key? key}) : super(key: key);
@@ -16,7 +17,7 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
   String _category = '主食';
 
   final List<String> _categories = [
-    '主食', '肉・魚・卵・豆', '野菜', 'きのこ', '調味料', 'その他'
+    '主食', '肉・魚・卵・豆', '野菜', 'きのこ', '調味料', '香辛料', 'その他'
   ];
 
   // Firestoreのingredients_master一覧を取得
@@ -51,7 +52,38 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('食材候補追加')),
+      appBar: AppBar(
+        title: const Text('食材候補追加'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: () async {
+              final shouldLogout = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('ログアウト'),
+                  content: const Text('ログアウトしますか？'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('キャンセル'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('ログアウト'),
+                    ),
+                  ],
+                ),
+              );
+              if (shouldLogout == true) {
+                final authService = AuthService();
+                await authService.signOut();
+              }
+            },
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(

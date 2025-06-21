@@ -19,7 +19,7 @@ def generate_image_prompt(text: str, label: str, title: str) -> str:
     Gemini APIで料理写真向けの英語プロンプトを生成
     """
     if label == 'レシピタイトル':
-        prompt = f"以下のレシピタイトルから料理写真に適した英語の画像説明文を生成してください。\n{text}"
+        prompt = f"以下のレシピタイトルから楽しい４コマ漫画風のレシピストーリーを作成して\n{text}"
     else:
         # 手順や材料などの説明文の場合
         if label.startswith('手順'):
@@ -53,26 +53,30 @@ def on_create_recipe(cloud_event: CloudEvent):
         # タイトル画像生成：まずプロンプトをGeminiで生成
         title = fields.get('title', {}).get('stringValue', '')
         if title:
+            # title_prompt = f"{title}の料理イラストを生成してください。コミックストリップスタイルで、４コマ漫画のようにオチがあるイラストを描いてください。"
             title_prompt = generate_image_prompt(title, 'レシピタイトル', title)
+            # Geminiでタイトル向けの画像プロンプトを生成
             title_image_url = generate_image_url(title_prompt, f"recipe_{doc_id}_title")
         else:
             title_image_url = ''
         # ステップごとの画像生成
-        steps_array = fields.get('steps', {}).get('arrayValue', {}).get('values', [])
-        step_image_urls = []
-        for idx, step in enumerate(steps_array):
-            desc = step.get('stringValue', '')
-            if not desc:
-                continue
-            # Geminiでステップ向けの画像プロンプトを生成
-            step_prompt = generate_image_prompt(desc, f'手順{idx+1}/{len(steps_array)}', title)
-            url = generate_image_url(step_prompt, f"recipe_{doc_id}_step_{idx}")
-            step_image_urls.append(url)
+        # steps_array = fields.get('steps', {}).get('arrayValue', {}).get('values', [])
+        # step_image_urls = []
+        # for idx, step in enumerate(steps_array):
+        #     desc = step.get('stringValue', '')
+        #     if not desc:
+        #         continue
+        #     # Geminiでステップ向けの画像プロンプトを生成
+        #     # step_prompt = generate_image_prompt(desc, f'手順{idx+1}/{len(steps_array)}', title)
+        #     step_prompt = "{title}の料理の手順{step_num}を描いてください。コミックストリップスタイルで、４コマ漫画のようにオチがあるイラストを描いてください。".format(
+        #         title=title, step_num=idx + 1)
+        #     url = generate_image_url(step_prompt, f"recipe_{doc_id}_step_{idx}")
+        #     step_image_urls.append(url)
         # Firestoreに更新
         recipe_ref = firestore_client.document(doc_path)
         recipe_ref.update({
             'titleImageUrl': title_image_url,
-            'stepImageUrls': step_image_urls
+            # 'stepImageUrls': step_image_urls
         })
         logging.info(f"Recipe {doc_id} images generated and Firestore updated.")
     except Exception as e:
