@@ -9,6 +9,9 @@ import traceback
 from typing import List
 import sys
 import base64
+import firebase_admin
+from firebase_admin import credentials, firestore
+from datetime import datetime
 
 # ログのフォーマットを設定して、エンコーディングの問題に対応
 logging.basicConfig(
@@ -27,30 +30,87 @@ WORDPRESS_URL = os.environ.get('WORDPRESS_URL')
 WORDPRESS_USER = os.environ.get('WORDPRESS_USER')  
 WORDPRESS_APP_PASSWORD = os.environ.get('WORDPRESS_APP_PASSWORD')  
 
+# Firebase初期化
+try:
+    firebase_admin.initialize_app()
+    db = firestore.client()
+    logging.info("Firebase initialized successfully")
+except Exception as e:
+    logging.error("Firebase initialization failed: %s", e)
+    db = None
+
 def generate_blog_content(title: str) -> str:
     """
     Gemini APIでタイトルからSEO対策済みブログ記事をHTMLで生成
     """
     # SEO対策プロンプト（autogenblog2wpを参考に）
     prompt = f"""
-【プロンプト例】
-今日は「 {title}」について、料理ブロガー向けの収益化記事を作成してください。
+あなたは共働き子育て世代をターゲットとしたレシピブログ記事を執筆してください。以下の要素を盛り込み、読者が「これなら自分にもできる！」「今日の献立に役立つ！」と思えるような、役立つ情報満載の記事を生成してください。
 
-ターゲット：忙しい共働き夫婦（30-40代）
-悩み：時短で美味しい夕食を作りたい
-収益目標：1記事あたり月1000円
-アフィリエイト商品：３点含める
+プロンプト本文
+レシピタイトル案:
 
-記事構成：
-1. 導入（悩み共感）→ 300文字
-2. 基本レシピ → 800文字
-3. 時短テクニック → 600文字
-4. 失敗しないコツ → 500文字
-5. アレンジ3選 → 600文字
-6. おすすめ商品紹介 → 400文字
-7. まとめ → 200文字
+{title}
 
-各セクションで自然にアフィリエイト商品を紹介し、読者の購買意欲を高める文章にしてください。
+記事の構成要素:
+
+はじめに：共感と導入
+
+共働き子育て世代の「時間がない」「献立に悩む」といった共通の悩みに寄り添う言葉で読者の心を掴む。両学長のような関西弁で。
+
+今回のレシピがその悩みをどう解決するのか、期待感を持たせる。
+
+今回のレシピ：時短テクニック満載！
+
+調理工程の短縮術: 例: ワンパン調理、電子レンジ活用、下ごしらえを前日に済ませるコツなど。
+
+食材の選び方・下処理の時短: 例: カット済み野菜の活用、肉の下味冷凍のすすめ、魚の選び方など。
+
+調理器具の活用術: 例: ホットプレート、圧力鍋、フードプロセッサーなどを時短に使う方法。
+
+食材の豆知識：賢く美味しく！
+
+栄養面: 例: この食材に含まれる栄養素とその効能（特に子供に良いものなど）。
+
+選び方・保存方法: 例: 新鮮な食材の見分け方、長持ちさせる保存テクニック。
+
+旬の食材の魅力: 例: 旬の食材を使うメリットや、取り入れ方。
+
+調理のノウハウ＆美味しくなるひと手間：料理上手に一歩前進！
+
+基本的な調理スキル: 例: 炒め物のコツ、煮物の味の染み込ませ方、火加減の調整。
+
+調味料の黄金比: 例: 定番の調味料で簡単に味が決まる比率。
+
+ワンランクアップの秘訣: 例: 隠し味、仕上げにかける調味料、盛り付けのポイント。
+
+アレンジレシピの提案: 例: 今回のレシピをベースに、別の食材や調味料で楽しめるバリエーション。
+
+「今日のこぼれ話」や「ママ友からのひと言」のような、親近感を持たせるコラム
+
+読者が「あるある」と感じるような、日々の育児や料理に関するちょっとしたエピソード。
+
+読者からの質問に答えるQ&A形式。
+
+読者アンケートの結果を共有。
+
+料理の失敗談や成功談など、リアルな声。
+
+まとめ：明日から使えるヒント
+
+今回のレシピのポイントを簡潔にまとめる。
+
+読者が料理に対して前向きな気持ちになれるようなメッセージ。
+
+「また次回のレシピでお会いしましょう！」といった締めの言葉。
+
+その他、ブログ記事に含めるべき要素:
+
+読者への問いかけ: 記事の途中に「皆さんの時短術は何ですか？」「この食材、どう使っていますか？」など、コメントを促す問いかけを入れる。
+
+写真のイメージ: 各工程や完成品のイメージ写真について言及し、視覚的な魅力を高める。
+
+SNSでのシェアを促す言葉: 読者が記事を共有したくなるような仕掛け。
 
 【出力形式】
 
@@ -221,7 +281,7 @@ def recipe_suggest(request):
             return add_cors_headers(resp), 400
         # Geminiへのプロンプト生成
         prompt = f"""
-以下の食事タイプに合うレシピを、在庫食材のみで3件、日本語で提案してください。
+以下の食事タイプに合うレシピを、在庫食材のみで1件、日本語で提案してください。
 食事タイプ: {meal_type}
 """
         if extra_cond:
@@ -280,44 +340,69 @@ def recipe_suggest(request):
         except pyjson.JSONDecodeError as json_err:
             logging.error('レシピJSONの解析に失敗: %s, JSON: %s', json_err, json_text[:300])
             resp = jsonify({"error": "Invalid recipe JSON", "raw": json_text[:500]})
-            return add_cors_headers(resp), 500
-        # ブログ自動投稿
+            return add_cors_headers(resp), 500        # レシピ生成は完了しているので、すぐにレスポンスを返す
+        resp = jsonify({"recipes": recipes})
+        
+        # ブログ投稿は非同期で処理（レスポンスをブロックしない）
         titles = [recipe.get('title') for recipe in recipes if recipe.get('title')]
         if titles:
-            logging.info('ブログ自動投稿: %s 件', len(titles))
-            try:                
-                logging.info('ブログ記事データ生成を開始します')
-                bulk_post_data = [generate_blog_content([titles[0]])]
-                logging.info('ブログ記事データ生成完了: %d件', len(bulk_post_data))
-                ##print('生成されたブログ記事データ:', bulk_post_data[:3])  # 最初の3件を表示
-                # レスポンス結果を表示するプログレスバー
-                total_posts = len(bulk_post_data)
-                success_count = 0
-                fail_count = 0
-                
-                # 修正: bulk_post_dataの要素が文字列の場合に対応
-                for i, post_data in enumerate(bulk_post_data):
-                    if isinstance(post_data, str):
-                        post_data = {"title": titles[0], "content": post_data, "status": "publish"}
-                    post_title = post_data.get('title', '無題')
-                    logging.info('[%d/%d] 記事「%s」を投稿中...', i+1, total_posts, post_title)
+            import threading
+            def async_blog_posting():
+                logging.info('ブログ自動投稿（非同期）: %s 件', len(titles))
+                try:                
+                    logging.info('ブログ記事データ生成を開始します')
+                    bulk_post_data = [generate_blog_content(titles[0])]
+                    logging.info('ブログ記事データ生成完了: %d件', len(bulk_post_data))
                     
-                    # WordPress投稿を試行
-                    success = post_to_wordpress(post_data)
+                    total_posts = len(bulk_post_data)
+                    success_count = 0
+                    fail_count = 0
                     
-                    if success:
-                        success_count += 1
-                        logging.info('✅ WordPress投稿成功: %s', post_title)
-                    else:
-                        fail_count += 1
-                        logging.error('❌ WordPress投稿失敗: %s', post_title)
-                
-                # 投稿結果のサマリーを出力
-                logging.info('投稿結果サマリー: 成功=%d件, 失敗=%d件, 合計=%d件', 
-                           success_count, fail_count, total_posts)
-            except Exception as e:
-                logging.exception('ブログ投稿エラー: %s', e)
-        resp = jsonify({"recipes": recipes})
+                    # 修正: bulk_post_dataの要素が文字列の場合に対応
+                    for i, post_data in enumerate(bulk_post_data):
+                        if isinstance(post_data, str):
+                            post_data = {"title": titles[0], "content": post_data, "status": "publish"}
+                        post_title = post_data.get('title', '無題')
+                        logging.info('[%d/%d] 記事「%s」を投稿中...', i+1, total_posts, post_title)
+                        
+                        # HTMLコンテンツのクリーニング処理
+                        if 'content' in post_data:
+                            original_content = post_data['content']
+                            cleaned_content = clean_html_content(original_content)
+                            if cleaned_content != original_content:
+                                logging.info('HTMLコンテンツをクリーニングしました: %s', post_title)
+                                post_data['content'] = cleaned_content
+                        
+                        # WordPress投稿を試行
+                        success = post_to_wordpress(post_data)
+                        
+                        # Firestoreにも保存
+                        firestore_success = save_post_to_firestore(post_data)
+                        
+                        if success:
+                            success_count += 1
+                            logging.info('✅ WordPress投稿成功: %s', post_title)
+                        else:
+                            fail_count += 1
+                            logging.error('❌ WordPress投稿失敗: %s', post_title)
+                        
+                        if firestore_success:
+                            logging.info('✅ Firestore保存成功: %s', post_title)
+                        else:
+                            logging.error('❌ Firestore保存失敗: %s', post_title)
+                    
+                    # 投稿結果のサマリーを出力
+                    logging.info('投稿結果サマリー: 成功=%d件, 失敗=%d件, 合計=%d件', 
+                               success_count, fail_count, total_posts)
+                except Exception as e:
+                    logging.exception('ブログ投稿エラー: %s', e)
+            
+            # 非同期でブログ投稿を開始
+            thread = threading.Thread(target=async_blog_posting)
+            thread.daemon = True
+            thread.start()
+            logging.info('ブログ投稿処理を非同期で開始しました')
+        
         return add_cors_headers(resp)
     except Exception as e:
         logging.exception("Unhandled exception in recipe_suggest")
@@ -325,7 +410,57 @@ def recipe_suggest(request):
         resp = jsonify({"error": str(e), "trace": tb})
         return add_cors_headers(resp), 500
 
+def save_post_to_firestore(post_data: dict) -> bool:
+    """
+    投稿データをFirestoreに保存
+    """
+    if db is None:
+        logging.error("Firestore client is not initialized")
+        return False
+    
+    try:
+        # よみもの記事用のドキュメントデータを準備
+        yomimono_data = {
+            'title': post_data.get('title', '無題'),
+            'content': post_data.get('content', ''),
+            'excerpt': post_data.get('excerpt', ''),
+            'status': post_data.get('status', 'publish'),
+            'date': datetime.now(),
+            'author': '料理AI',
+            'categories': post_data.get('categories', ['レシピ']),
+            'tags': post_data.get('tags', []),
+            'featured_media': post_data.get('featured_media', ''),
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        }
+        
+        # Firestoreの'yomimono'コレクションに保存
+        doc_ref = db.collection('yomimono').add(yomimono_data)
+        logging.info("Yomimono data saved to Firestore with ID: %s", doc_ref[1].id)
+        return True
+        
+    except Exception as e:
+        logging.error("Failed to save post to Firestore: %s", e)
+        return False
+
 # --- ここからon_create_ingredient_masterのエントリポイントを追加 ---
 from ingredient_master_on_create import on_create_ingredient_master
 from recipe_on_create import on_create_recipe
 # --- ここまで追加 ---
+
+def clean_html_content(content: str) -> str:
+    """
+    HTMLコンテンツから余計なマークダウン記号を削除
+    """
+    if not isinstance(content, str):
+        return content
+    
+    # 冒頭の ```html を削除
+    if content.strip().startswith('```html'):
+        content = content.strip()[7:].strip()
+    
+    # 末尾の ``` を削除
+    if content.strip().endswith('```'):
+        content = content.strip()[:-3].strip()
+    
+    return content

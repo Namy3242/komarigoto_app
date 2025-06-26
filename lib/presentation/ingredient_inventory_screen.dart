@@ -14,6 +14,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer; // developer.log を使用するためにインポート
 import 'package:url_launcher/url_launcher.dart';
 import 'auth_service.dart'; // AuthServiceをインポート
+import 'yomimono_screen.dart'; // YomimonoScreenをインポート
 
 // presentation層用の拡張Ingredientクラス
 class PresentationIngredient extends Ingredient {
@@ -60,11 +61,16 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
   final Ref ref;
   IngredientInventoryNotifier(this.ref) : super({});
 
-  String get userId => FirebaseAuth.instance.currentUser?.uid ?? '';
-
-  // --- レシピ提案・保存用状態 ---
-  bool isLoading = false;
+  String get userId => FirebaseAuth.instance.currentUser?.uid ?? '';  // --- レシピ提案・保存用状態 ---
+  bool _isLoading = false;
   String? errorMessage;
+
+  bool get isLoading => _isLoading;
+  
+  set isLoading(bool value) {
+    _isLoading = value;
+    state = Map.from(state); // 状態変更を通知
+  }
 
   // Firestoreから在庫データを取得し、カテゴリごとにマッピングしてstateにセット
   Future<void> fetchInventory() async {
@@ -230,8 +236,7 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
           'mealType': mealType,
           'extraCondition': extraCondition,
         }),
-      );
-      if (res.statusCode == 200) {
+      );      if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final recipes = data['recipes'] as List<dynamic>?;
         if (recipes == null || recipes.isEmpty) {
@@ -240,26 +245,11 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
           state = Map.from(state);
           return;
         }
-        // Firestoreに全レシピ自動保存
-        final batch = FirebaseFirestore.instance.batch();
-        final recipesCol = FirebaseFirestore.instance.collection('users/$userId/recipes');
-        for (final recipe in recipes) {
-          final data = {
-            'title': recipe['title'] ?? '',
-            'description': recipe['description'] ?? '',
-            'ingredients': recipe['ingredients'] ?? [],
-            'steps': recipe['steps'] ?? [],
-            'titleImageUrl': '',
-            'stepImageUrls': [],
-            'createdAt': FieldValue.serverTimestamp(),
-          };
-          batch.set(recipesCol.doc(), data);
-        }
-        await batch.commit();
+        
+        // まず成功ダイアログを表示（ブログ投稿完了を待たない）
         isLoading = false;
         errorMessage = null;
         state = Map.from(state);
-        // 成功時はダイアログ表示
         if (context.mounted) {
           showDialog(
             context: context,
@@ -269,6 +259,9 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
             ),
           );
         }
+        
+        // Firestoreに全レシピ自動保存（非同期で実行、UIはブロックしない）
+        _saveRecipesToFirestore(recipes);
       } else {
         isLoading = false;
         errorMessage = 'レシピ提案APIの呼び出しに失敗しました。\n${res.body}';
@@ -278,6 +271,30 @@ class IngredientInventoryNotifier extends StateNotifier<Map<String, List<Present
       isLoading = false;
       errorMessage = '通信エラー: $e';
       state = Map.from(state);
+    }
+  }
+
+  // --- レシピをFirestoreに非同期で保存 ---
+  Future<void> _saveRecipesToFirestore(List<dynamic> recipes) async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      final recipesCol = FirebaseFirestore.instance.collection('users/$userId/recipes');
+      for (final recipe in recipes) {
+        final data = {
+          'title': recipe['title'] ?? '',
+          'description': recipe['description'] ?? '',
+          'ingredients': recipe['ingredients'] ?? [],
+          'steps': recipe['steps'] ?? [],
+          'titleImageUrl': '',
+          'stepImageUrls': [],
+          'createdAt': FieldValue.serverTimestamp(),
+        };
+        batch.set(recipesCol.doc(), data);
+      }
+      await batch.commit();
+      developer.log('Recipes saved to Firestore successfully', name: 'IngredientInventoryNotifier');
+    } catch (e) {
+      developer.log('Failed to save recipes to Firestore: $e', name: 'IngredientInventoryNotifier');
     }
   }
 }
@@ -944,11 +961,11 @@ class MainBottomNav extends StatefulWidget {
   State<MainBottomNav> createState() => _MainBottomNavState();
 }
 
-class _MainBottomNavState extends State<MainBottomNav> {  int _selectedIndex = 0;
-  final List<Widget> _screens = [
+class _MainBottomNavState extends State<MainBottomNav> {  int _selectedIndex = 0;  final List<Widget> _screens = [
     const IngredientInventoryScreen(),
     const MoodRecipeScreen(), // 気分タブを2番目に移動
     const RecipeListScreen(),
+    const YomimonoScreen(), // よみもの画面を追加
     const IngredientMasterAddScreen(),
   ];
 
@@ -961,19 +978,20 @@ class _MainBottomNavState extends State<MainBottomNav> {  int _selectedIndex = 0
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
+      body: _screens[_selectedIndex],      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed, // 5つのアイテムに対応
         currentIndex: _selectedIndex,
         onTap: (i) => setState(() => _selectedIndex = i),
         backgroundColor: Colors.white,
         selectedItemColor: Colors.deepPurple,
-        unselectedItemColor: Colors.grey,
-        selectedLabelStyle: TextStyle(color: Colors.deepPurple, fontSize: 13, fontWeight: FontWeight.bold),
+        unselectedItemColor: Colors.grey,        selectedLabelStyle: TextStyle(color: Colors.deepPurple, fontSize: 13, fontWeight: FontWeight.bold),
         unselectedLabelStyle: TextStyle(color: Colors.grey, fontSize: 12),
-        showUnselectedLabels: true,        items: const [
+        showUnselectedLabels: true,
+        items: const [
           BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: '冷蔵庫'),
           BottomNavigationBarItem(icon: Icon(Icons.emoji_emotions), label: '気分'),
           BottomNavigationBarItem(icon: Icon(Icons.restaurant_menu), label: 'レシピ'),
+          BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'よみもの'),
           BottomNavigationBarItem(icon: Icon(Icons.add_box), label: '食材候補'),
         ],
       ),
@@ -1506,6 +1524,8 @@ class MoodRecipeScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    // 状態変更を監視するためにwatchを使用
+    final ingredientsMap = ref.watch(ingredientInventoryProvider);
     final notifier = ref.read(ingredientInventoryProvider.notifier);
     final isLoading = notifier.isLoading;
     // --- 選択肢 ---
