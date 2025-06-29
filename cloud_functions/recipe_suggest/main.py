@@ -786,3 +786,35 @@ def judge_needed_ingredients(recipe_ingredients, stock_ingredients):
     except Exception as e:
         logging.error('材料判定処理でエラー: %s', e)
         return recipe_ingredients  # エラー時は全材料を返す
+
+@functions_framework.http
+def judge_ingredients(request):
+    """
+    レシピの材料と在庫を比較して、購入が必要な材料を判定するエンドポイント
+    """
+    # OPTIONSメソッド（CORSプリフライト）対応
+    if request.method == 'OPTIONS':
+        response = make_response()
+        return add_cors_headers(response)
+    
+    try:
+        data = request.get_json()
+        recipe_ingredients = data.get("recipe_ingredients", [])
+        stock_ingredients = data.get("stock_ingredients", [])
+        
+        if not recipe_ingredients:
+            resp = jsonify({"error": "recipe_ingredients required"})
+            return add_cors_headers(resp), 400
+        
+        # Gemini APIで必要な材料を判定
+        needed_ingredients = judge_needed_ingredients(recipe_ingredients, stock_ingredients)
+        
+        resp = jsonify({
+            "needed_ingredients": needed_ingredients
+        })
+        return add_cors_headers(resp)
+        
+    except Exception as e:
+        logging.error('材料判定エラー: %s', e)
+        resp = jsonify({"error": "Ingredient judgment failed", "detail": str(e)})
+        return add_cors_headers(resp), 500
