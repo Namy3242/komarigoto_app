@@ -2,18 +2,98 @@ import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
+import 'ingredient_inventory_screen.dart';
 
-class YomimonoScreen extends StatelessWidget {
+class YomimonoScreen extends HookConsumerWidget {
   const YomimonoScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(ingredientInventoryProvider.notifier);
+    final isLoading = notifier.isLoading;
+    
+    // この画面に入った時に既読数を更新
+    useEffect(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final yomimonoCountAsync = ref.read(yomimonoCountProvider);
+        yomimonoCountAsync.whenData((count) {
+          ref.read(readYomimonoCountProvider.notifier).updateReadCount(count);
+        });
+      });
+      return null;
+    }, []);
+    
     return Scaffold(
       appBar: AppBar(
-        title: const Text('よみもの'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: const Text('ストレスフリーに食卓を！'),
       ),
       body: const YomimonoContent(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: isLoading ? null : () {
+          // 記事生成用入力フォームを表示
+          showDialog(
+            context: context,
+            builder: (context) {
+              final TextEditingController topicController = TextEditingController();
+              final TextEditingController extraController = TextEditingController();
+              return AlertDialog(
+                title: const Text('記事生成'),
+                content: SizedBox(
+                  width: 300,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: topicController,
+                        decoration: const InputDecoration(
+                          labelText: '記事のテーマ',
+                          hintText: '例: 季節の料理、健康レシピ、時短料理',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: extraController,
+                        decoration: const InputDecoration(
+                          labelText: '追加条件（任意）',
+                          hintText: '例: 簡単、ヘルシー、子供向け',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        '現在の在庫食材を使った記事を生成します',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('キャンセル'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      notifier.generateBlogPost(
+                        context,
+                        topicController.text.trim(),
+                        extraController.text.trim(),
+                      );
+                    },
+                    child: const Text('記事生成'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+        icon: isLoading
+            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
+            : const Icon(Icons.create),
+        label: const Text('記事生成'),
+      ),
     );
   }
 }
@@ -217,8 +297,7 @@ class YomimonoDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(postData['title'] ?? 'よみもの'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: const Text('ストレスフリーに食卓を！'),
         actions: [
           // 共有ボタン（オプション）
           IconButton(
@@ -303,27 +382,35 @@ class YomimonoDetailScreen extends StatelessWidget {
                 customStylesBuilder: (element) {
                   if (element.localName == 'h2') {
                     return {
-                      'color': '#${Theme.of(context).colorScheme.primary.value.toRadixString(16).padLeft(8, '0')}',
+                      'color': '#D2691E', // 暖かいオレンジブラウン
                       'margin-bottom': '16px',
                       'margin-top': '24px',
+                      'font-weight': 'bold',
                     };
                   }
                   if (element.localName == 'h3') {
                     return {
-                      'color': '#${Theme.of(context).colorScheme.secondary.value.toRadixString(16).padLeft(8, '0')}',
+                      'color': '#8B4513', // 深いブラウン
                       'margin-bottom': '12px',
                       'margin-top': '20px',
+                      'font-weight': 'bold',
                     };
                   }
                   if (element.localName == 'blockquote') {
                     return {
-                      'border-left': '4px solid #${Theme.of(context).colorScheme.primary.value.toRadixString(16).padLeft(8, '0')}',
+                      'border-left': '4px solid #FF6B35', // メインオレンジ
                       'padding-left': '16px',
                       'margin': '16px 0',
                       'font-style': 'italic',
-                      'background-color': '#${Theme.of(context).colorScheme.primaryContainer.value.toRadixString(16).padLeft(8, '0')}',
+                      'background-color': '#FFF8DC', // 薄いクリーム色
                       'padding': '16px',
                       'border-radius': '8px',
+                    };
+                  }
+                  if (element.localName == 'strong') {
+                    return {
+                      'color': '#B8860B', // ダークゴールデンロッド
+                      'font-weight': 'bold',
                     };
                   }
                   return null;

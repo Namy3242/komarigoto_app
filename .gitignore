@@ -54,3 +54,4 @@ ios/Runner/GoogleService-Info.plist
 cloud_functions/recipe_suggest/test_request.py
 cors.json
 .firebase/
+.env_/

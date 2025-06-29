@@ -53,7 +53,7 @@ class _IngredientMasterAddScreenState extends State<IngredientMasterAddScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('食材候補追加'),
+        title: const Text('ストレスフリーに食卓を！'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),

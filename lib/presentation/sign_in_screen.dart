@@ -52,13 +52,31 @@ class _SignInScreenState extends State<SignInScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('ログイン')),
+      appBar: AppBar(title: const Text('ストレスフリーに食卓を！')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // アプリタイトル
+              Text(
+                'ストレスフリーに食卓を！',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'AIがあなたの献立を考えます',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: Colors.grey[600],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
               TextField(
                 controller: _emailController,
                 decoration: const InputDecoration(labelText: 'メールアドレス'),
@@ -87,12 +105,12 @@ class _SignInScreenState extends State<SignInScreen> {
                           onPressed: _signUpWithEmail,
                           child: const Text('新規登録'),
                         ),
-                        const SizedBox(height: 12),
-                        ElevatedButton.icon(
-                          onPressed: _signInWithGoogle,
-                          icon: const Icon(Icons.login),
-                          label: const Text('Googleでログイン'),
-                        ),
+                        // const SizedBox(height: 12),
+                        // ElevatedButton.icon(
+                        //   onPressed: _signInWithGoogle,
+                        //   icon: const Icon(Icons.login),
+                        //   label: const Text('Googleでログイン'),
+                        // ),
                       ],
                     ),
             ],
