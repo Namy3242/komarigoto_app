@@ -17,6 +17,7 @@ import 'auth_service.dart'; // AuthServiceをインポート
 import 'yomimono_screen.dart'; // YomimonoScreenをインポート
 import 'shopping_list_screen.dart'; // ShoppingListScreenをインポート
 import 'mood_recipe_screen.dart'; // MoodRecipeScreenをインポート
+import 'meal_plan_screen.dart'; // MealPlanScreenをインポート
 import 'package:shared_preferences/shared_preferences.dart';
 
 // レシピ数を監視するProvider
@@ -1447,6 +1448,7 @@ class _MainBottomNavState extends ConsumerState<MainBottomNav> {
   final List<Widget> _screens = [
     const IngredientInventoryScreen(),
     const MoodRecipeScreen(), // 気分タブを2番目に移動
+    const MealPlanScreen(), // 献立タブを追加
     const RecipeListScreen(),
     const YomimonoScreen(), // よみもの画面を追加
     const ShoppingListScreen(), // 買い物リスト画面を追加
@@ -1466,12 +1468,12 @@ class _MainBottomNavState extends ConsumerState<MainBottomNav> {
 
   // タブ変更時に既読数を更新する共通メソッド
   void _updateReadCountOnTabChange(int tabIndex) {
-    if (tabIndex == 2) { // 時短タブ
+    if (tabIndex == 3) { // 時短タブ（RecipeListScreen）
       final recipeCountAsync = ref.read(recipeCountProvider);
       recipeCountAsync.whenData((count) {
         ref.read(readRecipeCountProvider.notifier).updateReadCount(count);
       });
-    } else if (tabIndex == 3) { // じっくりタブ
+    } else if (tabIndex == 4) { // じっくりタブ（YomimonoScreen）
       final yomimonoCountAsync = ref.read(yomimonoCountProvider);
       yomimonoCountAsync.whenData((count) {
         ref.read(readYomimonoCountProvider.notifier).updateReadCount(count);
@@ -1526,7 +1528,7 @@ class _MainBottomNavState extends ConsumerState<MainBottomNav> {
     return Scaffold(
       body: _screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.shifting, // 6つのアイテムに対応
+        type: BottomNavigationBarType.fixed, // 7つのアイテムに対応
         currentIndex: _selectedIndex,
         onTap: (i) {
           // 前のタブから離れる時に既読数を更新
@@ -1546,6 +1548,7 @@ class _MainBottomNavState extends ConsumerState<MainBottomNav> {
         items: [
           const BottomNavigationBarItem(icon: Icon(Icons.kitchen), label: '冷蔵庫'),
           const BottomNavigationBarItem(icon: Icon(Icons.emoji_emotions), label: '調理'),
+          const BottomNavigationBarItem(icon: Icon(Icons.calendar_view_week), label: '献立'),
           // 時短タブ（レシピ一覧）にバッジを追加
           BottomNavigationBarItem(
             icon: recipeCountAsync.when(
